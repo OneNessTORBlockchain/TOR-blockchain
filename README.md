@@ -1,3 +1,6 @@
+
+<img width="2172" height="724" alt="1Ness TOR Blockchain banner" src="https://github.com/user-attachments/assets/97ed63ed-4217-438c-85b1-f13eb3514a9b" />
+
 # OneNess TOR — node, API, command brain and console
 
 A complete TOR-chain node: a **Rust ledger** (`rust/torchain`) that owns every
