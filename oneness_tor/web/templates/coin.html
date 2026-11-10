@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <img class="hero-banner" src="{{ url_for('pages.image', name='TOR COIN.png') }}" alt="">
+  <div class="hero-inner">
+    <div>
+      <div class="eyebrow">coin metadata · pinned on IPFS</div>
+      <h1>{{ coin.name }} <span>{{ coin.symbol }}</span></h1>
+      <p>
+        The native coin of the OneNess TOR chain: {{ coin.decimals }} decimals, 50,000,000 TOR
+        minted to the founder wallet at genesis, and a logo pinned to IPFS so wallets and
+        marketplaces read the same metadata everywhere.
+      </p>
+      <div class="row">
+        <a class="btn" href="/api/coin" target="_blank" rel="noopener">GET /api/coin</a>
+        <a class="btn ghost" href="/explorer">explorer</a>
+        <a class="btn ghost" href="/payments">price table</a>
+      </div>
+    </div>
+    <div class="hero-coin">
+      <img src="{{ url_for('pages.image', name='TOR Coin Logo.png') }}" alt="{{ coin.name }} logo">
+    </div>
+  </div>
+</section>
+
+<section class="grid g2">
+  <div class="panel">
+    <h2><span class="dot"></span>Metadata (live)</h2>
+    <div id="coin">reading /api/coin…</div>
+  </div>
+  <div class="panel">
+    <h2><span class="dot"></span>Logo URIs</h2>
+    <div id="uris">…</div>
+    <label style="margin-top:.7rem">ready-to-paste tag</label>
+    <pre class="code" id="snippet">…</pre>
+    <div class="row" style="margin-top:.4rem">
+      <button class="btn ghost small" id="copy-snippet">copy tag</button>
+      <a class="btn ghost small" id="open-logo" target="_blank" rel="noopener" href="#">open image ↗</a>
+    </div>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="row">
+    <div>
+      <div class="eyebrow">permanent public record · tokens · balances · totals</div>
+      <h2 style="margin:0">Tokens &amp; markets</h2>
+    </div>
+    <div class="spacer"></div>
+    <button class="btn ghost small" id="registry-run">reload</button>
+    <a class="btn ghost small" href="/api/tokens/public" target="_blank"
+       rel="noopener">GET /api/tokens/public</a>
+  </div>
+  <div id="registry" style="margin-top:.7rem">reading the permanent table...</div>
+  <p class="tiny" style="margin-top:.6rem">
+    Price, pools, market cap, 24h volume, supply, circulating supply, holder
+    count, mint address and owner are public ledger data, readable forever.
+    Balances are public too: <code>GET /api/public/balances</code> lists every
+    address and <code>GET /api/public/tokens/&lt;SYMBOL&gt;/holders</code> lists
+    every holder. Only sending needs a signature.
+  </p>
+</section>
+
+<section class="panel">
+  <h2><span class="dot"></span>Locked prices</h2>
+  <div id="pricing">loading…</div>
+  <p class="tiny" style="margin-top:.6rem">
+    Served by <code>GET /api/pricing</code> and enforced by the fee router; the same numbers
+    appear in the pages, the invoices and the Ollama prompt.
+  </p>
+  <div id="api-log" class="log" style="margin-top:.6rem;max-height:150px"></div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const $ = id => document.getElementById(id);
+
+async function loadCoin() {
+  try {
+    const data = await OT.get("/api/coin");
+    $("coin").innerHTML = OT.kv([
+      ["name", `<b>${OT.esc(data.name)}</b>`],
+      ["symbol", `<b>${OT.esc(data.symbol)}</b>`],
+      ["decimals", OT.esc(data.decimals)],
+      ["native coin id", `<span class="mono">${OT.esc(data.native_coin_id)}</span>
+        <button class="btn ghost small" data-copy="${OT.esc(data.native_coin_id)}">copy</button>`],
+      ["genesis supply", `${OT.fmtInt(data.genesis_supply_tor || 50000000)} TOR`],
+      ["privacy", `${OT.esc(data.properties?.privacy || "public or anonymous, per transaction")}`],
+      ["description", OT.esc(data.description)],
+      ["logo cid", `<span class="mono">${OT.esc(data.properties?.logo_cid || "—")}</span>`],
+      ["source", OT.esc(data.source || "node /api/coin")],
+    ]);
+    const image = data.image || data.logo_url;
+    const ipfs = data.logo_ipfs || `ipfs://${data.properties?.logo_cid}`;
+    $("uris").innerHTML = OT.kv([
+      ["image", `<a href="${OT.esc(image)}" target="_blank" rel="noopener">open ↗</a>`],
+      ["logo_url", `<span class="mono">${OT.esc(short(image, 46))}</span>
+        <button class="btn ghost small" data-copy="${OT.esc(image)}">copy</button>`],
+      ["logo_ipfs", `<span class="mono">${OT.esc(ipfs)}</span>
+        <button class="btn ghost small" data-copy="${OT.esc(ipfs)}">copy</button>`],
+      ["gateway", `<span class="mono">${OT.esc(new URL(image).host)}</span>`],
+    ]);
+    const tag = `<img src="${image}" alt="${data.name} logo" width="96" height="96">`;
+    $("snippet").textContent = tag;
+    $("snippet").dataset.tag = tag;
+    $("open-logo").href = image;
+  } catch (problem) {
+    $("coin").innerHTML = `<span class="badge bad">${OT.esc(problem.message)}</span>`;
+  }
+}
+
+function short(text, size) {
+  const value = String(text || "");
+  return value.length > size ? `${value.slice(0, size)}…` : value;
+}
+
+async function loadPricing() {
+  try {
+    const data = await OT.get("/api/pricing");
+    $("pricing").innerHTML = OT.table(data.rows, [
+      { label: "code", cls: "mono", key: "code" },
+      { label: "what", key: "label" },
+      { label: "TOR", cls: "mono", render: row => `${row.tor}` },
+      { label: "microTOR", cls: "mono", render: row => OT.fmtInt(row.micro_tor) },
+      { label: "locked", render: row => row.locked
+          ? `<span class="badge ok">locked</span>` : `<span class="badge">configurable</span>` },
+    ], "no prices");
+  } catch (problem) {
+    $("pricing").innerHTML = `<span class="badge bad">${OT.esc(problem.message)}</span>`;
+  }
+}
+
+async function loadRegistry() {
+  try {
+    const data = await OT.get("/api/tokens/public");
+    const rows = data.tokens || [];
+    const pools = row => (row.pools || []).length
+      ? `${row.pools[0].pair} - ${OT.fmtTor(row.pools[0].tor_reserve)} TOR / ` +
+        `${OT.fmtInt(row.pools[0].token_reserve)}`
+      : (row.symbol === "TOR" ? "quote coin" : "no pool");
+    $("registry").innerHTML =
+      `<div class="row" style="margin-bottom:.5rem">` +
+      `<span class="badge ok">${OT.fmtInt(data.count)} token(s)</span>` +
+      `<span class="badge info">privacy: public or anonymous, per send</span>` +
+      `<span class="badge">ranked by ${OT.esc(data.ranked_by || "mint time")}</span>` +
+      `<span class="tiny muted">standard ${OT.esc(data.standard)}` +
+      `${data.node_reachable ? "" : " - node unreachable: " + OT.esc(data.warning || "")}` +
+      `</span></div>` +
+      OT.table(rows, [
+        { label: "logo", render: row => {
+            const image = OT.tokenIcon(row);
+            return `<img src="${OT.esc(image.src)}" alt="" width="24" height="24"
+              style="border-radius:50%;vertical-align:middle"
+              title="${OT.esc(image.source)}">`;
+          } },
+        { label: "ticker", cls: "mono", render: row => `<b>${OT.esc(row.symbol)}</b>` },
+        { label: "mint address", cls: "mono", render: row => OT.esc(row.mint_address) },
+        { label: "owner", cls: "mono", render: row => OT.esc(short(row.owner || "-", 22)) },
+        { label: "price", cls: "mono", render: row => row.price_tor === null
+            ? `<span class="badge warn">no pool</span>` : `${row.price_tor} TOR` },
+        { label: "pools", render: row => OT.esc(pools(row)) },
+        { label: "supply", cls: "mono", render: row => OT.fmtInt(row.supply) },
+        { label: "circulating", cls: "mono", render: row => OT.fmtInt(row.circulating) },
+        { label: "holders", cls: "mono", render: row => {
+            if (row.holders === null || row.holders === undefined) return "-";
+            return `<a target="_blank" rel="noopener"
+              href="/api/public/tokens/${OT.esc(row.symbol)}/holders">${OT.fmtInt(row.holders)}</a>`;
+          } },
+        { label: "market cap", cls: "mono", render: row => row.market_cap_tor === null
+            ? "-" : `${OT.fmtInt(row.market_cap_tor)} TOR` },
+        { label: "24h volume", cls: "mono", render: row =>
+            `${OT.fmtTor(row.volume_24h_tor * 1e8)} TOR` +
+            (row.volume_24h_swaps ? ` (${OT.fmtInt(row.volume_24h_swaps)} swaps)` : "") },
+      ], "the node has no tokens yet");
+  } catch (problem) {
+    $("registry").innerHTML = `<span class="badge bad">${OT.esc(problem.message)}</span>`;
+  }
+}
+
+$("copy-snippet").addEventListener("click", () => OT.copy($("snippet").dataset.tag || $("snippet").textContent));
+document.addEventListener("click", event => {
+  const button = event.target.closest("[data-copy]");
+  if (button) OT.copy(button.dataset.copy);
+});
+document.addEventListener("DOMContentLoaded", () => { loadCoin(); loadPricing(); loadRegistry(); });
+$("registry-run").addEventListener("click", loadRegistry);
+</script>
+{% endblock %}

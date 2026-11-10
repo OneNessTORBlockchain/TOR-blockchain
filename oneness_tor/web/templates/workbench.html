@@ -1,0 +1,655 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <div class="row">
+    <div>
+      <div class="eyebrow">real files · real commands · real preview</div>
+      <h2 style="margin:0">DarkWeb App Builder + Rust Program Builder</h2>
+      <p class="tiny" style="margin:.3rem 0 0">
+        Two workbenches on this node: <b>web</b> (HTML / CSS / JS / Node) and
+        <b>rust</b> (a real cargo project). Every prompt becomes real files, and every
+        button is a real API call — read, create, write, delete, run, install
+        dependencies, start the app and watch it in the preview window. Sign in at
+        <a href="/wallet">/wallet</a> — your own wallet owns what you build here (create, read,
+        write, run, install, AI-edit, serve and deploy). No admin token is involved. Nothing is
+        charged here: <b>deploy</b> performs a real <code>ADD_ONION</code> and returns the onion URL.
+      </p>
+    </div>
+    <div class="spacer"></div>
+    <span class="badge info" id="surface-model">model …</span>
+  </div>
+
+  <div class="grid g3" style="margin-top:.9rem">
+    <div class="field">
+      <label for="project">project</label>
+      <select id="project"></select>
+    </div>
+    <div class="field">
+      <label for="new-name">new project name</label>
+      <input id="new-name" placeholder="neon onion shop">
+    </div>
+    <div class="field">
+      <label for="new-kind">kind</label>
+      <select id="new-kind">
+        <option value="web">DarkWeb web app · html / css / js</option>
+        <option value="rust">Rust program · cargo</option>
+      </select>
+    </div>
+  </div>
+  <div class="row" style="margin-top:.6rem">
+    <button class="btn" id="create">✦ create project</button>
+    <button class="btn ghost small" id="reload">reload project</button>
+    <button class="btn danger small" id="delete-project">delete project</button>
+    <span class="tiny muted" id="project-meta">—</span>
+  </div>
+</section>
+
+<section class="grid g2">
+  <div class="panel">
+    <div class="row">
+      <h2 style="margin:0"><span class="dot"></span>Files</h2>
+      <div class="spacer"></div>
+      <span class="badge info" id="file-count">0</span>
+    </div>
+    <div id="tree" class="tree" style="margin-top:.6rem">no project yet</div>
+    <div class="row" style="margin-top:.7rem">
+      <div class="field" style="flex:1">
+        <label for="new-path">new file path</label>
+        <input id="new-path" placeholder="src/lib.rs">
+      </div>
+      <button class="btn ghost small" id="new-file" style="align-self:flex-end">create file</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="row">
+      <h2 style="margin:0"><span class="dot"></span>Editor</h2>
+      <div class="spacer"></div>
+      <span class="badge info" id="editor-meta">no file</span>
+    </div>
+    <p class="tiny mono muted" id="editor-path" style="margin:.4rem 0">—</p>
+    <textarea id="editor" class="editor" spellcheck="false"
+      placeholder="pick a file on the left"></textarea>
+    <div class="row" style="margin-top:.6rem">
+      <button class="btn small" id="save">save file</button>
+      <button class="btn ghost small" id="reload-file">reload</button>
+      <button class="btn danger small" id="delete-file">delete file</button>
+      <span class="tiny muted" id="save-status"></span>
+    </div>
+  </div>
+</section>
+
+<section class="grid g2">
+  <div class="panel">
+    <div class="row">
+      <h2 style="margin:0"><span class="dot"></span>Prompt the builder</h2>
+      <div class="spacer"></div>
+      <span class="badge violet">ai edit</span>
+    </div>
+    <div class="field" style="margin-top:.5rem">
+      <label for="ai-model">model for this surface</label>
+      <select id="ai-model"></select>
+    </div>
+    <label for="prompt" style="margin-top:.5rem">what should it do?</label>
+    <textarea id="prompt" style="min-height:96px"
+      placeholder="add a sticky nav, three product cards and a glowing footer; keep the neon theme"></textarea>
+    <div class="row" style="margin-top:.6rem">
+      <button class="btn" id="ask">✦ send to the builder</button>
+      <button class="btn ghost small" id="reset-chat">new conversation</button>
+      <span class="tiny muted" id="ai-status"></span>
+    </div>
+    <div id="ai-answer" class="answer" style="margin-top:.6rem">Every answer is a JSON
+      file plan applied to the project — keep prompting to edit the app.</div>
+    <div id="ai-history" class="chat" style="margin-top:.6rem"></div>
+  </div>
+
+  <div class="panel">
+    <h2><span class="dot"></span>Run &amp; dependencies</h2>
+    <label for="command">command (argv, no shell)</label>
+    <div class="row">
+      <input id="command" style="flex:1" placeholder="cargo build --release">
+      <input id="timeout" type="number" min="1" max="1800" value="120"
+             style="max-width:110px" title="timeout in seconds">
+      <button class="btn small" id="run" style="align-self:flex-end">run</button>
+    </div>
+    <p class="tiny muted" style="margin:.35rem 0 .6rem">
+      Allowed: cargo, rustc, python, pip, node, npm, npx, git, make, dotnet, go, java,
+      pytest. No shell operators (<code>; | &amp;&amp; &gt;</code>) — one command per call.
+    </p>
+    <label for="manager">install dependencies</label>
+    <div class="row">
+      <select id="manager" style="max-width:170px">
+        <option value="pip">pip</option>
+        <option value="npm">npm</option>
+        <option value="cargo">cargo add</option>
+      </select>
+      <input id="packages" style="flex:1" placeholder="express ws">
+      <button class="btn ghost small" id="install" style="align-self:flex-end">install</button>
+    </div>
+    <pre class="console" id="run-out" style="margin-top:.6rem;max-height:230px">$ ready</pre>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="row">
+    <h2 style="margin:0"><span class="dot"></span>Preview window</h2>
+    <div class="spacer"></div>
+    <span class="badge info" id="serve-state">not running</span>
+    <button class="btn small" id="serve">start app</button>
+    <button class="btn ghost small" id="restart">restart</button>
+    <button class="btn danger small" id="stop">stop</button>
+    <button class="btn ghost small" id="open-preview">open preview ↗</button>
+    <button class="btn ghost small" id="refresh-preview">reload</button>
+  </div>
+  <div class="split" style="margin-top:.7rem">
+    <div>
+      <iframe class="preview" id="preview" title="app preview"
+        sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+        srcdoc="<body style='background:#05060b;color:#8ea6c4;font-family:sans-serif;padding:2rem'>Create a project, then start it to see it here.</body>"></iframe>
+      <p class="tiny muted" id="preview-meta" style="margin-top:.4rem">—</p>
+    </div>
+    <div>
+      <label for="serve-log">process log <span class="tiny muted">(real stdout / stderr)</span></label>
+      <pre class="console" id="serve-log" style="max-height:330px">—</pre>
+    </div>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="row">
+    <div>
+      <div class="eyebrow">web → ADD_ONION · rust → cargo build + owner-only program</div>
+      <h2 style="margin:0"><span class="dot"></span>Deploy</h2>
+    </div>
+    <div class="spacer"></div>
+    <input id="deploy-owner" placeholder="owner wallet (your account)"
+           style="max-width:240px" readonly>
+    <button class="btn" id="deploy-run">deploy project</button>
+    <button class="btn ghost small" id="deploy-status">deployment</button>
+  </div>
+  <div id="deploy-out" class="muted tiny" style="margin-top:.6rem">
+    Deploy a DarkWeb app to get a real <code>.onion</code> URL, or a Rust program to compile it
+    and register an owner-only program on the chain.
+  </div>
+  <p class="tiny" style="margin-top:.6rem">
+    <b>DarkWeb:</b> Tor's control port performs <code>ADD_ONION</code> and points
+    <code>/builds/&lt;id&gt;/</code> at this node — the answer is the onion URL, or the exact
+    Tor error. <b>Rust:</b> <code>cargo build --release</code> runs for real; the binary is
+    sha3-hashed and stored as a program owned by the deploying wallet (only that wallet sees
+    its source, state and build, and only it can manage/run it). The chain charges no
+    transaction fee; nodes and platforms add their own fees.
+  </p>
+</section>
+
+<section class="panel">
+  <h2><span class="dot"></span>Live calls</h2>
+  <div id="api-log" class="log" style="max-height:180px"></div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const $ = id => document.getElementById(id);
+const state = { project: null, file: null, history: [], serve: null };
+
+function fail(id, problem) {
+  $(id).innerHTML = `<span class="badge bad">${OT.esc(problem.code || "ERROR")}</span> ` +
+    `<span class="tiny">${OT.esc(problem.message)}</span>`;
+  if (problem.details && problem.details.allowed) {
+    $(id).innerHTML += `<div class="tiny muted">allowed: ${OT.esc(problem.details.allowed.join(", "))}</div>`;
+  }
+}
+
+function projectId() { return state.project ? state.project.id : ""; }
+
+function apiPath(suffix) {
+  return `/api/workbench/projects/${encodeURIComponent(projectId())}${suffix || ""}`;
+}
+
+function previewTarget() {
+  if (!state.project) return null;
+  if (state.serve && state.serve.running && state.serve.preview_url) return state.serve.preview_url;
+  if (state.project.kind === "rust") return null;
+  return `/builds/${encodeURIComponent(state.project.id)}/`;
+}
+
+function renderTree() {
+  const rows = (state.project && state.project.tree) || [];
+  $("file-count").textContent = `${rows.length} file(s)`;
+  $("tree").innerHTML = rows.map(row =>
+    `<button type="button" class="treerow${state.file === row.path ? " active" : ""}" ` +
+    `data-path="${OT.esc(row.path)}"><span class="mono">${OT.esc(row.path)}</span>` +
+    `<em>${OT.esc(row.language)} · ${OT.fmtInt(row.bytes)} B</em></button>`).join("") ||
+    `<div class="empty">no files yet</div>`;
+}
+
+async function refreshTree() {
+  if (!state.project) return;
+  const data = await OT.get(`/api/workbench/projects/${encodeURIComponent(state.project.id)}`);
+  state.project = data.project;
+  renderTree();
+  $("project-meta").innerHTML =
+    `<span class="badge violet">${OT.esc(state.project.kind_label)}</span> ` +
+    `${OT.fmtInt(state.project.files)} files · ${OT.fmtInt(state.project.bytes)} bytes · ` +
+    `model <span class="mono">${OT.esc(state.project.model_in_use)}</span>`;
+  $("surface-model").textContent = `${state.project.kind === "rust" ? "rust_builder" : "web_builder"}: ${state.project.model_in_use}`;
+}
+
+async function openFile(path) {
+  if (!projectId() || !path) return;
+  try {
+    const data = await OT.get(`${apiPath("/files")}?path=${encodeURIComponent(path)}`);
+    state.file = data.path;
+    $("editor").value = data.content;
+    $("editor-path").textContent = data.path;
+    $("editor-meta").textContent = `${data.language} · ${OT.fmtInt(data.lines)} lines · ${OT.fmtInt(data.bytes)} B`;
+    $("save-status").textContent = "";
+    renderTree();
+  } catch (problem) {
+    fail("save-status", problem);
+  }
+}
+
+function refreshPreview() {
+  const target = previewTarget();
+  if (!target) {
+    $("preview").removeAttribute("src");
+    $("preview").srcdoc =
+      "<body style='background:#05060b;color:#8ea6c4;font-family:sans-serif;padding:2rem'>" +
+      "Rust program: press “start app” to run the binary. Its real stdout appears in the process log.</body>";
+    $("preview-meta").textContent = "no running preview yet";
+    return;
+  }
+  $("preview").removeAttribute("srcdoc");
+  $("preview").src = `${target}${target.includes("?") ? "&" : "?"}t=${Date.now()}`;
+  $("preview-meta").textContent = target;
+}
+
+function renderServe(data) {
+  state.serve = data;
+  $("serve-state").className = `badge ${data.running ? "ok" : "warn"}`;
+  $("serve-state").textContent = data.running ? `running on ${data.port}` : "not running";
+  $("serve-log").textContent = (data.log || "").trim() ||
+    (data.running ? "(no output yet)" : "—");
+}
+
+async function openProject(id) {
+  if (!id) return;
+  const data = await OT.get(`/api/workbench/projects/${encodeURIComponent(id)}`);
+  state.project = data.project;
+  state.file = null;
+  state.serve = null;
+  $("project").value = data.project.id;
+  $("ai-model").innerHTML = "";
+  renderTree();
+  $("project-meta").innerHTML =
+    `<span class="badge violet">${OT.esc(data.project.kind_label)}</span> ` +
+    `${OT.fmtInt(data.project.files)} files · ${OT.fmtInt(data.project.bytes)} bytes · ` +
+    `model <span class="mono">${OT.esc(data.project.model_in_use)}</span>`;
+  $("surface-model").textContent =
+    `${data.project.surface}: ${data.project.model_in_use}`;
+  $("command").value = data.project.kind === "rust" ? "cargo build --release" : "node --version";
+  $("manager").value = data.project.kind === "rust" ? "cargo" : "npm";
+  $("packages").value = data.project.kind === "rust" ? "" : "";
+  $("ai-history").innerHTML = "";
+  state.history = [];
+  try {
+    await OT.models($("ai-model"), data.project.model_in_use);
+  } catch (_) { /* the surface model is shown above regardless */ }
+  await openFile(data.project.entry);
+  const serve = await OT.get(apiPath("/serve"));
+  renderServe(serve);
+  refreshPreview();
+  await loadDeployment();
+}
+
+async function loadProjects(wanted) {
+  try {
+    const data = await OT.get("/api/workbench/projects");
+    const rows = data.projects || [];
+    $("project").innerHTML = rows.map(row =>
+      `<option value="${OT.esc(row.id)}">${OT.esc(row.title)} · ${OT.esc(row.kind)}` +
+      `${row.running ? " · running" : ""}</option>`).join("") ||
+      `<option value="">no projects yet — create one above</option>`;
+    if (wanted) $("project").value = wanted;
+    if (rows.length) {
+      await openProject($("project").value || rows[0].id);
+    } else {
+      state.project = null;
+      $("tree").innerHTML = `<div class="empty">create a project above</div>`;
+    }
+  } catch (problem) {
+    fail("tree", problem);
+  }
+}
+
+function printRun(data) {
+  const parts = [`$ ${data.command || "command"}`];
+  if (data.packages && data.packages.length) parts.push(`packages: ${data.packages.join(" ")}`);
+  if (data.stdout) parts.push(data.stdout.replace(/\s+$/, ""));
+  if (data.stderr) parts.push(`[stderr]\n${data.stderr.replace(/\s+$/, "")}`);
+  parts.push(`[exit ${data.exit_code === null || data.exit_code === undefined ? "timeout" : data.exit_code}` +
+    ` · ${OT.fmtInt(data.duration_ms)} ms]`);
+  $("run-out").textContent = parts.join("\n");
+}
+
+function renderHistory() {
+  $("ai-history").innerHTML = state.history.map(turn =>
+    `<div class="msg ${turn.role === "user" ? "user" : "assistant"}">` +
+    `<span class="who">${OT.esc(turn.role)}</span>${OT.esc(turn.content)}</div>`).join("");
+  $("ai-history").scrollTop = $("ai-history").scrollHeight;
+}
+
+$("project").addEventListener("change", event => {
+  openProject(event.target.value).catch(problem => fail("tree", problem));
+});
+
+$("reload").addEventListener("click", () => {
+  loadProjects(state.project ? state.project.id : "");
+});
+
+$("create").addEventListener("click", async () => {
+  const name = $("new-name").value.trim();
+  if (!name) { OT.toast("name the project first", "bad"); return; }
+  $("create").disabled = true;
+  try {
+    const data = await OT.post("/api/workbench/projects",
+      { name, kind: $("new-kind").value });
+    OT.toast(`${data.project.title} scaffolded — ${data.project.files} real files`, "ok");
+    $("new-name").value = "";
+    state.file = null;
+    await loadProjects(data.project.id);
+  } catch (problem) {
+    OT.toast(`${problem.code}: ${problem.message}`, "bad");
+  } finally {
+    $("create").disabled = false;
+  }
+});
+
+$("delete-project").addEventListener("click", async () => {
+  if (!projectId()) { OT.toast("pick a project first", "bad"); return; }
+  if (!confirm(`Delete ${state.project.title} and every file in it?`)) return;
+  try {
+    const data = await OT.del(`/api/workbench/projects/${encodeURIComponent(projectId())}`);
+    OT.toast(`deleted ${data.deleted} (${data.files} files)`, "ok");
+    state.project = null;
+    state.file = null;
+    await loadProjects();
+  } catch (problem) {
+    OT.toast(`${problem.code}: ${problem.message}`, "bad");
+  }
+});
+
+$("tree").addEventListener("click", event => {
+  const button = event.target.closest("[data-path]");
+  if (button) openFile(button.dataset.path);
+});
+
+$("save").addEventListener("click", async () => {
+  if (!projectId() || !state.file) { OT.toast("pick a file first", "bad"); return; }
+  $("save").disabled = true;
+  try {
+    const data = await OT.post(apiPath("/files"),
+      { path: state.file, content: $("editor").value });
+    $("save-status").innerHTML = `<span class="badge ok">${data.created ? "created" : "saved"}</span> ` +
+      `${OT.fmtInt(data.bytes)} B`;
+    await refreshTree();
+    refreshPreview();
+  } catch (problem) {
+    fail("save-status", problem);
+  } finally {
+    $("save").disabled = false;
+  }
+});
+
+$("reload-file").addEventListener("click", () => openFile(state.file));
+
+$("new-file").addEventListener("click", async () => {
+  if (!projectId()) { OT.toast("pick a project first", "bad"); return; }
+  const path = $("new-path").value.trim();
+  if (!path) { OT.toast("type a file path, e.g. src/lib.rs", "bad"); return; }
+  try {
+    const data = await OT.post(apiPath("/files"), { path, content: "", mode: "create" });
+    $("new-path").value = "";
+    await refreshTree();
+    await openFile(data.path);
+    OT.toast(`${data.path} created`, "ok");
+  } catch (problem) {
+    fail("save-status", problem);
+  }
+});
+
+$("delete-file").addEventListener("click", async () => {
+  if (!projectId() || !state.file) { OT.toast("pick a file first", "bad"); return; }
+  if (!confirm(`Delete ${state.file}?`)) return;
+  try {
+    const data = await OT.del(`${apiPath("/files")}?path=${encodeURIComponent(state.file)}`);
+    OT.toast(`deleted ${data.deleted}`, "ok");
+    state.file = null;
+    $("editor").value = "";
+    $("editor-path").textContent = "—";
+    $("editor-meta").textContent = "no file";
+    await refreshTree();
+    refreshPreview();
+  } catch (problem) {
+    fail("save-status", problem);
+  }
+});
+
+
+$("run").addEventListener("click", async () => {
+  if (!projectId()) { OT.toast("pick a project first", "bad"); return; }
+  const command = $("command").value.trim();
+  if (!command) { OT.toast("type a command", "bad"); return; }
+  $("run").disabled = true;
+  $("run-out").textContent = `$ ${command}\n…`;
+  try {
+    const data = await OT.post(apiPath("/run"),
+      { command, timeout: Number($("timeout").value) || 120 });
+    printRun(data);
+    if (data.ok) await refreshTree();
+    refreshPreview();
+  } catch (problem) {
+    fail("run-out", problem);
+  } finally {
+    $("run").disabled = false;
+  }
+});
+
+$("command").addEventListener("keydown", event => {
+  if (event.key === "Enter") { event.preventDefault(); $("run").click(); }
+});
+
+$("install").addEventListener("click", async () => {
+  if (!projectId()) { OT.toast("pick a project first", "bad"); return; }
+  const packages = $("packages").value.trim();
+  $("install").disabled = true;
+  $("run-out").textContent = `installing via ${$("manager").value}…`;
+  try {
+    const data = await OT.post(apiPath("/install"),
+      { manager: $("manager").value, packages });
+    printRun(data);
+    OT.toast(data.ok ? "dependencies installed" : "the installer failed — read the output",
+      data.ok ? "ok" : "bad");
+    await refreshTree();
+  } catch (problem) {
+    fail("run-out", problem);
+  } finally {
+    $("install").disabled = false;
+  }
+});
+
+$("ask").addEventListener("click", async () => {
+  if (!projectId()) { OT.toast("pick a project first", "bad"); return; }
+  const prompt = $("prompt").value.trim();
+  if (!prompt) { OT.toast("say what to build or change", "bad"); return; }
+  const model = $("ai-model").value || undefined;
+  $("ask").disabled = true;
+  $("ai-status").innerHTML = `<span class="spinner"></span> writing files…`;
+  $("ai-answer").innerHTML = `<span class="spinner"></span> ${OT.esc(model || "the surface model")} ` +
+    `is planning the change — local models can take a minute…`;
+  try {
+    const data = await OT.post(apiPath("/ai"), {
+      prompt, model, apply: true, history: state.history.slice(-8),
+    });
+    state.history.push({ role: "user", content: prompt });
+    state.history.push({ role: "assistant", content: data.answer || "(no note)" });
+    renderHistory();
+    $("prompt").value = "";
+    $("ai-status").innerHTML = `<span class="badge ok">${OT.esc(data.model)}</span>`;
+    $("ai-answer").innerHTML = OT.md(data.answer || "(the model returned no note)") +
+      OT.table(data.applied || [], [
+        { label: "file", cls: "mono", render: row => OT.esc(row.path) },
+        { label: "action", render: row => OT.badge(row.action) },
+        { label: "bytes", cls: "mono", render: row => OT.fmtInt(row.bytes) },
+      ], "the plan changed no files") +
+      (data.warnings && data.warnings.length
+        ? `<div class="console" style="margin-top:.4rem">${data.warnings.map(OT.esc).join("\n")}</div>`
+        : "");
+    await refreshTree();
+    if (data.applied && data.applied.length) await openFile(data.applied[0].path);
+    refreshPreview();
+  } catch (problem) {
+    $("ai-status").textContent = "";
+    fail("ai-answer", problem);
+  } finally {
+    $("ask").disabled = false;
+  }
+});
+
+$("reset-chat").addEventListener("click", () => {
+  state.history = [];
+  $("ai-history").innerHTML = "";
+  $("ai-answer").innerHTML = "New conversation — the whole project is sent with every prompt.";
+});
+
+function renderDeployment(data) {
+  const dep = (data && data.deployment) || data;
+  if (!dep) { $("deploy-out").innerHTML = "no deployment yet"; return; }
+  if (dep.kind === "web") {
+    $("deploy-out").innerHTML = `<span class="badge ok">deployed over Tor</span>` + OT.kv([
+      ["onion", `<a class="mono" href="http://${OT.esc(dep.onion)}" target="_blank" rel="noopener">${OT.esc(dep.onion)}</a>`],
+      ["url", `<span class="mono">${OT.esc(dep.onion_url)}</span>`],
+      ["service id", OT.esc(dep.service_id)],
+      ["deployed", OT.esc(OT.when(dep.deployed_at))],
+    ]) + `<button class="btn ghost small" data-copy="${OT.esc(dep.onion_url)}" style="margin-top:.4rem">copy onion URL</button>`;
+  } else {
+    $("deploy-out").innerHTML = `<span class="badge ok">compiled + registered on the chain</span>` + OT.kv([
+      ["program", OT.esc(dep.program_id)],
+      ["owner", OT.esc((data && data.owner_address) || dep.owner_address || "—")],
+      ["binary", `<span class="mono">${OT.esc(OT.short(dep.binary, 30))}</span>`],
+      ["binary sha3", `<span class="mono">${OT.esc(dep.binary_sha3)}</span>`],
+      ["build ms", OT.esc(dep.build_ms)],
+      ["deployed", OT.esc(OT.when(dep.deployed_at))],
+    ]) + `<p class="tiny" style="margin-top:.4rem">Owner-only: read it and call
+      <code>run</code> with the owner wallet session (<code>GET /api/contracts/&lt;id&gt;</code>).</p>`;
+  }
+}
+
+async function loadDeployment() {
+  if (!projectId()) return;
+  try {
+    const data = await OT.get(apiPath("/deployment"));
+    if (data.deployment) renderDeployment(data);
+  } catch (_) { /* nothing deployed yet */ }
+}
+
+async function deployProject() {
+  if (!projectId()) { OT.toast("pick a project first", "bad"); return; }
+  const owner = $("deploy-owner").value.trim();
+  $("deploy-run").disabled = true;
+  $("deploy-out").innerHTML = `<span class="spinner"></span> deploying — cargo builds and Tor publishes take a moment…`;
+  try {
+    const body = {};
+    if (owner) body.owner_wallet = owner;
+    const data = await OT.post(apiPath("/deploy"), body);
+    renderDeployment(data);
+    OT.toast(data.deployment && data.deployment.kind === "web"
+      ? "published over Tor" : "program compiled and registered", "ok");
+    await refreshTree();
+  } catch (problem) {
+    fail("deploy-out", problem);
+  } finally {
+    $("deploy-run").disabled = false;
+  }
+}
+
+$("deploy-run").addEventListener("click", deployProject);
+$("deploy-status").addEventListener("click", loadDeployment);
+document.addEventListener("click", event => {
+  const button = event.target.closest("[data-copy]");
+  if (button) OT.copy(button.dataset.copy);
+});
+
+async function startServe(restart) {
+  if (!projectId()) { OT.toast("pick a project first", "bad"); return; }
+  $("serve").disabled = true;
+  if (restart) {
+    try { await OT.post(apiPath("/serve/stop"), {}); } catch (_) { /* not running */ }
+  }
+  try {
+    const data = await OT.post(apiPath("/serve"), {});
+    renderServe(data);
+    refreshPreview();
+    OT.toast(data.running ? `app running on port ${data.port}` : "the app exited — read the process log",
+      data.running ? "ok" : "bad");
+    await refreshTree();
+  } catch (problem) {
+    fail("serve-log", problem);
+  } finally {
+    $("serve").disabled = false;
+  }
+}
+
+$("serve").addEventListener("click", () => startServe(false));
+$("restart").addEventListener("click", () => startServe(true));
+
+$("stop").addEventListener("click", async () => {
+  if (!projectId()) return;
+  try {
+    const data = await OT.post(apiPath("/serve/stop"), {});
+    renderServe({ running: false, log: data.stopped ? "stopped by the operator" : "nothing was running" });
+    refreshPreview();
+    OT.toast(data.stopped ? `stopped (port ${data.port})` : "no server was running", "ok");
+  } catch (problem) {
+    fail("serve-log", problem);
+  }
+});
+
+$("open-preview").addEventListener("click", () => {
+  const target = previewTarget();
+  if (!target) {
+    OT.toast("press “start app” first — a Rust program needs its preview server", "bad");
+    return;
+  }
+  window.open(target, "oneness-preview", "width=1024,height=780,noopener");
+});
+
+$("refresh-preview").addEventListener("click", refreshPreview);
+
+setInterval(async () => {
+  if (!projectId() || !state.serve || !state.serve.running) return;
+  try {
+    const data = await OT.get(apiPath("/serve"));
+    if (!data.running) {
+      renderServe(data);
+      refreshPreview();
+      return;
+    }
+    $("serve-log").textContent = (data.log || "").trim() || $("serve-log").textContent;
+  } catch (_) { /* keep the last known state */ }
+}, 5000);
+
+document.addEventListener("DOMContentLoaded", async () => {
+  const wallet = await OT.myWallet();
+  if (wallet) {
+    $("deploy-owner").value = wallet.name;
+  } else {
+    $("deploy-owner").value = "";
+    OT.toast("sign in at /wallet — your own wallet owns the projects you build here", "bad");
+  }
+  loadProjects();
+});
+
+</script>
+{% endblock %}

@@ -1,0 +1,101 @@
+{
+  "standard": "oneness-tor/security-module/1",
+  "issued_at": "2026-11-10T01:35:05Z",
+  "issuer": "oneness-security-issuer",
+  "privacy": {
+    "standard": "oneness-tor/privacy/1",
+    "modes": [
+      "public",
+      "anonymous"
+    ],
+    "default_mode": "public",
+    "anonymous_label": "Tor-Anonymous-onion",
+    "chain_field": "external_ref",
+    "ref_prefix": "oneness-privacy:1",
+    "reserved_prefix": "oneness-privacy:",
+    "public_ref": "",
+    "anonymous_ref": "oneness-privacy:1|mode=anonymous",
+    "masks": [
+      "from"
+    ],
+    "never_masks": [
+      "to",
+      "amount",
+      "token",
+      "fee",
+      "timestamp",
+      "height",
+      "block",
+      "txid",
+      "signature"
+    ]
+  },
+  "rules": [
+    {
+      "id": "privacy.mode.known",
+      "rule": "a record that declares a privacy mode must declare one of the modes in privacy.modes",
+      "enforced_by": "security_module.verify_record",
+      "on_violation": "reject the snapshot"
+    },
+    {
+      "id": "privacy.ref.exact",
+      "rule": "a ref that begins with privacy.reserved_prefix is a privacy declaration and must be exactly the anonymous ref; a hand-written ref that only resembles one is a malformed declaration and the snapshot is refused",
+      "enforced_by": "security_module.verify_record",
+      "on_violation": "reject the snapshot"
+    },
+    {
+      "id": "privacy.ref.appdata",
+      "rule": "any other external_ref value is application payload and is NOT a privacy declaration - it neither masks nor unmaskes anything. The live ledger carries 'genesis', 'hosted-liveness-proof' and 'onenness-tor-mainnet:buy:<id>', and a rule that forbade them would reject the chain it is protecting",
+      "enforced_by": "security_module.verify_record",
+      "on_violation": "nothing to enforce: the ref is ignored here"
+    },
+    {
+      "id": "privacy.marker.agrees",
+      "rule": "the privacy field and external_ref must agree - a record that says 'anonymous' in one and 'public' in the other is a tampered record, not a typo",
+      "enforced_by": "security_module.verify_record",
+      "on_violation": "reject the snapshot"
+    },
+    {
+      "id": "privacy.from.not.masked",
+      "rule": "a chain record may never store the anonymous label as its 'from' address: the ledger debits the signer, so a stored label is either a lost address or a lie",
+      "enforced_by": "security_module.verify_record",
+      "on_violation": "reject the snapshot"
+    },
+    {
+      "id": "privacy.projection.masks",
+      "rule": "every public projection of a record must mask 'from' when the record is anonymous",
+      "enforced_by": "privacy.public_view",
+      "on_violation": "a page would publish an address the sender hid"
+    },
+    {
+      "id": "peer.policy.signed",
+      "rule": "a peer's snapshot must arrive with the policy it implements, and that policy's signature must verify against a locally pinned key",
+      "enforced_by": "node_sync.require_protocol",
+      "on_violation": "SYNC_PROTOCOL_MISMATCH"
+    },
+    {
+      "id": "peer.policy.same",
+      "rule": "a peer's policy hash must equal a hash this node already trusts; a node with different privacy rules cannot sync, in either direction",
+      "enforced_by": "node_sync.require_protocol",
+      "on_violation": "SYNC_PROTOCOL_MISMATCH"
+    },
+    {
+      "id": "peer.records.verified",
+      "rule": "every record in a snapshot is re-checked against privacy.* before import, not just the blocks",
+      "enforced_by": "node_sync.verify_snapshot",
+      "on_violation": "reject the snapshot"
+    }
+  ],
+  "peer_sync": {
+    "attestation_field": "protocol",
+    "requires": "signed policy + matching policy_hash",
+    "hash_algorithm": "sha3-256 over canonical JSON of this document",
+    "trust_source": "security/trusted-keys.json (committed, never fetched)",
+    "offline": "verification never uses the network: an unreachable origin cannot change or block a local decision"
+  },
+  "not_claimed": [
+    "This is not a zero-knowledge proof system and does not claim to be. The chain is a transparent-account ledger: balances are public, so an anonymous transfer masks the sender's address on the record, it does not make the transfer untraceable (see privacy.py).",
+    "No auditor has reviewed this policy. It is a machine-checkable statement of the rules the code already enforces - calling that 'audited' would be a lie, and the signature proves provenance (which key signed it), not correctness.",
+    "A node can run modified code and still hold a valid key. The gate stops modified nodes from syncing *data*, which is the only thing a remote verifier can actually decide."
+  ]
+}

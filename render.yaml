@@ -1,0 +1,155 @@
+# Render blueprint — one image, one start command: `python scripts/start.py`.
+#
+# The image (Dockerfile) *compiles the Rust ledger* and puts `torchain` on PATH.
+# The start command starts it on 127.0.0.1:8545 (node.autostart) and only then
+# serves the API, so the service can never be up while every chain route answers
+# 503 CHAIN_UNAVAILABLE. A fresh container adopts seed/chain-snapshot.json
+# (`python scripts/export_seed.py`) — the verified ledger, not an empty chain.
+#
+# Ollama is the one thing a 512 MB free instance cannot hold: a model needs
+# gigabytes. Two honest options, no fake green light either way:
+#   * ONENESS_OLLAMA_URL=https://ollama.com + ONENESS_OLLAMA_API_KEY -> the model
+#     runs on Ollama's hardware and returns native tool calls over HTTPS
+#     (verified: /api/tags, /api/version and /api/chat all answer with a key);
+#   * ONENESS_OLLAMA_URL=https://<your-pc-tunnel> -> your own Ollama, ≥2 GB, or
+#     a tunnel to the machine that has the models.
+# With neither, the brain answers 503 OLLAMA_UNAVAILABLE and says exactly this.
+#
+# Tor: the image installs the `tor` daemon, so this same service can publish
+# itself as a hidden service — ONENESS_TOR_AUTOSTART starts it and
+# ONENESS_TOR_PUBLISH_NODE ADD_ONIONs the API at boot. The address is printed in
+# the deploy log, in /api/health (`onion`) and in /admin; ONENESS_TOR_ONION_KEY
+# keeps it identical across redeploys. See docs/TOR_DEPLOY.md.
+services:
+  - type: web
+    name: oneness-tor
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health
+    # ---- the chain itself: a disk, or every redeploy starts over ----------
+    # `data/` is where the ledger (data/chain/state.json + blocks.jsonl), the
+    # admin account, the price table and the Tor service records live. Without a
+    # disk a redeploy wipes all of it: the height falls back to the seed, the
+    # operator account is gone (first registrant owns /admin) and the onion key
+    # has to come from the environment again. The image's working directory is
+    # /app, so /app/data is exactly `paths.data_dir` — no env var needed.
+    # Render disks are not available on the free plan: upgrade the instance, then
+    # delete the `#` from the four lines below (1 GB holds the ledger for years).
+    # disk:
+    #   name: oneness-data
+    #   mountPath: /app/data
+    #   sizeGB: 1
+    envVars:
+      - key: ONENESS_NODE_API
+        value: http://127.0.0.1:8545      # the node in this container
+      - key: ONENESS_NODE_AUTOSTART
+        value: "1"
+      # optional: a snapshot path or https URL when seed/ is not in the image
+      - key: ONENESS_NODE_SEED
+        sync: false
+      - key: ONENESS_OLLAMA_AUTO_INSTALL
+        value: "0"
+      # a 7B model is several GB — pull it deliberately (or on a paid instance)
+      - key: ONENESS_OLLAMA_PULL
+        value: "0"
+      # a hosted brain needs no RAM here: ollama.com runs the weights and answers
+      # with native tool calls. Point the URL at your own Ollama (≥2 GB, or a
+      # tunnel to the machine that has the models) instead if you prefer.
+      - key: ONENESS_OLLAMA_URL
+        value: https://ollama.com
+      # the token is a secret: put it in the dashboard (or the tracked .env, which
+      # this blueprint already ships). Never rendered by /api/health or /status.
+      - key: ONENESS_OLLAMA_API_KEY
+        sync: false
+      # a model that actually exists on ollama.com — the local default
+      # (qwen2.5:7b-instruct) is not in that catalogue, and pick_model() would
+      # fall back to this same model anyway
+      - key: ONENESS_OLLAMA_MODEL
+        value: gpt-oss:20b
+      - key: ONENESS_TOKEN_IMAGES
+        value: "1"
+      # one proposer: this service proposes. A replica sets role=replica and
+      # points ORIGIN at the public URL of the proposing node — but the committed
+      # config.fleet.yaml already does both (it demotes any node that does not
+      # hold the origin's chain token), so this stays unset unless you really want
+      # a blueprint service to propose.
+      - key: ONENESS_NODE_ROLE
+        sync: false
+      # one public node proposes, every deploy mirrors it: the committed
+      # config.fleet.yaml carries origin.url + origin.token, and this literal
+      # repeats the URL so a fresh blueprint service is a replica from the first
+      # boot. A node that IS the origin (it holds the fleet token as
+      # ONENESS_ADMIN_TOKEN, or its ONENESS_PUBLIC_BASE_URL names this URL) never
+      # pulls from itself — see oneness_tor/services/node_sync.py.
+      # Delete any dashboard value that still points at an old trycloudflare
+      # tunnel: a real env var wins over config.fleet.yaml.
+      - key: ONENESS_SYNC_ORIGIN
+        value: https://www.torblockchain.fun
+      - key: ONENESS_SYNC_TOKEN
+        sync: false
+      - key: ONENESS_SYNC_INTERVAL
+        value: "60"
+      # ---- snapshot push: origin → node 2 / node 3 -----------------------
+      # Comma-separated replica base URLs; use "url|token" when the replica has
+      # its own admin token (a seeded replica already accepts the origin's).
+      # Empty means nothing to push to: the timer simply does not start.
+      - key: ONENESS_SYNC_PUSH_TARGETS
+        sync: false
+      - key: ONENESS_SYNC_PUSH_INTERVAL
+        value: "60"
+      - key: ONENESS_SYNC_PUSH_KEEP
+        value: "5"
+      # ---- Tor: publish this container as an onion from inside Render ----
+      # The Dockerfile installs `tor`; these two make the node start it and
+      # ADD_ONION the API at boot, so the address exists without anybody
+      # shelling into the container. ONENESS_TOR_ONION_KEY keeps that address
+      # across a redeploy (a Render disk is ephemeral, the environment is not):
+      # `.env` already carries a key minted with `torctl keygen`, so the address
+      # is fixed before the first deploy; override it here to give this service
+      # its own onion. Set ONENESS_PUBLIC_BASE_URL to this service's public
+      # domain when it proposes the chain, so it never treats itself as a
+      # replica of origin.url.
+      - key: ONENESS_TOR_AUTOSTART
+        value: "1"
+      - key: ONENESS_TOR_PUBLISH_NODE
+        value: "1"
+      # no `tor` package on a Python-runtime service: install it at boot
+      - key: ONENESS_TOR_AUTO_INSTALL
+        value: "1"
+      - key: ONENESS_TOR_ONION_KEY
+        sync: false
+      - key: ONENESS_ADMIN_TOKEN
+        sync: false
+      - key: ONENESS_PUBLIC_BASE_URL
+        sync: false
+      # ---- the PayPal gate (oneness_tor.services.paypal_gate) ---------------
+      # Buy/sell needs a treasury wallet that already holds TOR: this chain has
+      # no mint, so a purchase moves TOR out of a wallet, it never issues any.
+      # Both secrets are dashboard-only (sync:false) - .env is tracked in this
+      # repository, so a credential written there would be committed.
+      # With these unset the gate answers 503 PAYPAL_NOT_CONFIGURED and takes no
+      # money; /api/paypal/status says so on the payments page.
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: PAYPAL_ENV
+        value: sandbox
+      - key: PAYPAL_WEBHOOK_ID
+        sync: false
+      - key: ONENESS_TOR_TREASURY_WALLET
+        sync: false
+      - key: PAYPAL_RETURN_URL
+        sync: false
+      - key: PAYPAL_CANCEL_URL
+        sync: false
+      # ---- the signed security module (security/) ---------------------------
+      # The policy, its signature and the pinned keys are committed and verified
+      # on disk at every start - this node never asks a URL what the rules are.
+      # ONENESS_SECURITY_REQUIRE_ATTESTATION defaults to on: a peer whose policy
+      # hash this node does not trust cannot sync. Set
+      # ONENESS_SECURITY_ALLOW_UNATTESTED=1 only during a rollout, and unset it.
+      - key: ONENESS_SECURITY_DIR
+        sync: false

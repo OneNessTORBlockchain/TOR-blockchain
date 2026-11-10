@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <img class="hero-banner" src="{{ url_for('pages.image', name='1Ness TOR Blockchain banner.png') }}" alt="">
+  <div class="hero-inner">
+    <div>
+      <div class="eyebrow">native TOR chain · {{ coin.symbol }} · {{ coin.decimals }} decimals</div>
+      <h1>OneNess <span>TOR</span> node.<br>Real chain. Real AI.</h1>
+      <p>
+        A Rust ledger with an Ed25519 wallet core, a Python API that speaks every endpoint,
+        and a local Ollama brain that calls those endpoints for you. Payments, Rust contracts,
+        meme launches and AI-NFTs — all settled in TOR, on one node.
+      </p>
+      <div class="row">
+        <a class="btn" href="/dashboard">◈ Open the command deck</a>
+        <a class="btn ghost" href="/docs">❰❱ Browse the live API</a>
+        <a class="btn ghost" href="/coin">⬡ TOR coin</a>
+      </div>
+      <p class="tiny" style="margin-top:.9rem">
+        genesis mints <b>50,000,000 TOR</b> into the founder wallet ·
+        the wallet chooses <b>public or anonymous</b> for every send
+      </p>
+    </div>
+    <div class="hero-coin">
+      <img src="{{ url_for('pages.image', name='TOR Coin Logo.png') }}" alt="TOR coin logo">
+    </div>
+  </div>
+</section>
+
+<section class="grid g4">
+  <div class="stat"><div class="k">chain height</div><div class="v" id="s-height">{{ live.height_text }}</div>
+    <div class="s" id="s-chain">{{ live.chain_text }}</div></div>
+  <div class="stat gold"><div class="k">total supply</div><div class="v" id="s-supply">{{ live.supply_text }}</div>
+    <div class="s">50,000,000 TOR at genesis</div></div>
+  <div class="stat lime"><div class="k">founder balance</div><div class="v" id="s-founder">{{ live.founder_text }}</div>
+    <div class="s mono" id="s-founder-address">{{ live.founder_short }}</div></div>
+  <div class="stat magenta"><div class="k">API endpoints</div><div class="v" id="s-endpoints">{{ live.endpoints }}</div>
+    <div class="s">one fetch-data tool for all of them</div></div>
+</section>
+
+<section class="grid g3">
+  <a class="feature" href="/dashboard">
+    <div class="glyph">◈</div><h3>Ollama command deck</h3>
+    <p>Ask in English. The model reads the live schema, calls the real endpoints and shows
+       the request + response it used.</p>
+    <span class="badge info">fetch_oneness_data</span>
+  </a>
+  <a class="feature" href="/explorer">
+    <div class="glyph">⛓</div><h3>Explorer</h3>
+    <p>Blocks, records, accounts and supply verification straight from the Rust node.</p>
+    <span class="badge">public / anonymous</span>
+  </a>
+  <a class="feature" href="/wallet">
+    <div class="glyph">⚿</div><h3>Wallets</h3>
+    <p>Phantom-compatible Ed25519 keys, live balances, signed transfers and offline signing.</p>
+    <span class="badge ok">ed25519</span>
+  </a>
+  <a class="feature" href="/payments">
+    <div class="glyph">◉</div><h3>Payments</h3>
+    <p>Invoices for every LOCKED price — contract 5, mint 3, transfer 0.1 — paid on-chain.</p>
+    <span class="badge violet">0.1 TOR transfer fee</span>
+  </a>
+  <a class="feature" href="/contracts">
+    <img src="{{ url_for('pages.image', name='OneNess Tech.png') }}" alt="">
+    <div class="glyph">⌬</div><h3>Rust contracts</h3>
+    <p>Templates compile with <code>rustc</code> before they are stored; only authorized
+       nodes may deploy.</p>
+    <span class="badge info">rustc --emit=metadata</span>
+  </a>
+  <a class="feature" href="/ollama">
+    <div class="glyph">◍</div><h3>Model manager</h3>
+    <p>Install Ollama, pull models with live progress, <code>ollama run &lt;model&gt;</code>
+       from the browser.</p>
+    <span class="badge lime" id="s-models">{{ live.ollama.text }}</span>
+  </a>
+</section>
+
+<section class="grid g2">
+  <div class="panel">
+    <h2><span class="dot"></span>Live chain</h2>
+    <div id="chain-kv" class="muted tiny">
+      {% if live.node_reachable %}
+      <dl class="kv">
+        <dt>chain id</dt><dd>{{ live.chain_id }}</dd>
+        <dt>height</dt><dd>{{ live.height_text }}</dd>
+        <dt>head</dt><dd title="{{ live.head_hash }}">{{ live.head_short }}</dd>
+        <dt>genesis</dt><dd>{{ live.genesis_short }}</dd>
+        <dt>fee receiver</dt><dd>{{ live.fee_receiver }}</dd>
+        <dt>coin</dt><dd>{{ coin.name }} · {{ coin.symbol }}</dd>
+      </dl>
+      {% else %}
+      <span class="badge bad">{{ live.errors.chain or 'the node is not answering' }}</span>
+      {% endif %}
+    </div>
+    <div class="row" style="margin-top:.7rem">
+      <button class="btn ghost small" id="refresh">refresh</button>
+      <a class="btn small" href="/explorer">open explorer</a>
+    </div>
+  </div>
+  <div class="panel">
+    <h2><span class="dot"></span>Settlement</h2>
+    <div class="grid g2" style="gap:.6rem">
+      <div class="stat tight"><div class="k">paid revenue</div><div class="v" id="s-revenue">{{ live.revenue_text }} TOR</div>
+        <div class="s" id="s-invoices">{{ live.revenue_count }} paid</div></div>
+      <div class="stat tight"><div class="k">tor control</div><div class="v" id="s-tor">{{ live.tor.text }}</div>
+        <div class="s" id="s-tor-detail">{{ live.tor.detail }}</div></div>
+    </div>
+    <p class="tiny" style="margin-top:.8rem">
+      Every price comes from <a href="/api/pricing">/api/pricing</a>; every charge is a signed
+      transfer to the node's fee receiver, visible in the explorer.
+    </p>
+  </div>
+</section>
+
+<section class="panel">
+  <h2><span class="dot"></span>How the node is put together</h2>
+  <div class="grid g4">
+    <div><div class="eyebrow">01 ledger</div><p class="tiny">Rust <code>torchain</code> owns balances, tokens, pools and the permanent record.</p></div>
+    <div><div class="eyebrow">02 api</div><p class="tiny">Flask exposes every endpoint once and documents itself at <code>/api/docs</code>.</p></div>
+    <div><div class="eyebrow">03 brain</div><p class="tiny">Ollama receives the schema + a live snapshot, then calls the API with one tool.</p></div>
+    <div><div class="eyebrow">04 services</div><p class="tiny">Payments, contracts and meme launches settle on-chain before they are served.</p></div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const $ = id => document.getElementById(id);
+async function load() {
+  try {
+    const info = await OT.get("/api/chain/info");
+    $("s-height").textContent = OT.fmtInt(info.height);
+    $("s-chain").textContent = `${info.chain_id} · head ${OT.short(info.head_hash, 8)}`;
+    $("s-supply").textContent = OT.fmtTor(info.total_supply_micro);
+    $("s-founder-address").textContent = OT.short(info.founder, 10);
+    $("chain-kv").innerHTML = OT.kv([
+      ["chain id", OT.esc(info.chain_id)],
+      ["height", OT.esc(info.height)],
+      ["head", `<span title="${OT.esc(info.head_hash)}">${OT.esc(OT.short(info.head_hash, 14))}</span>`],
+      ["genesis", OT.esc(OT.short(info.genesis_hash, 14))],
+      ["fee receiver", OT.esc(info.fee_receiver)],
+      ["records", "permanent · nothing expires"],
+      ["coin", `${OT.esc(info.coin?.name || "OneNess TOR")} · ${OT.esc(info.coin?.symbol || "TOR")}`],
+    ]);
+    const account = await OT.get(`/api/account/${info.founder}`);
+    $("s-founder").textContent = OT.fmtTor(account.balance_micro);
+  } catch (problem) {
+    $("s-height").textContent = "—";
+    $("chain-kv").innerHTML = `<span class="badge bad">${OT.esc(problem.message)}</span>`;
+  }
+  /* The secondary cards are independent of each other, so they are fired in
+     parallel and each one paints as soon as its own answer lands. Serially
+     over Tor this chain took ~20s, which made a healthy node look dead. */
+  const fill = (path, apply, fallback) =>
+    OT.get(path).then(apply).catch(() => { if (fallback) fallback(); });
+
+  fill("/api/tools", tools => {
+    $("s-endpoints").textContent = tools.count;
+  });
+  fill("/api/ollama/status", ollama => {
+    $("s-models").textContent = `${ollama.model_count} models · ${ollama.reachable ? "up" : "down"}`;
+  });
+  fill("/api/payments/revenue", money => {
+    $("s-revenue").textContent = `${money.total_tor} TOR`;
+    $("s-invoices").textContent = `${money.count} paid`;
+  });
+  fill("/api/tor/status", control => {
+    $("s-tor").textContent = control.reachable ? "up" : "off";
+    $("s-tor-detail").textContent = control.reachable
+      ? `${(control.services || []).length} hidden services`
+      : (control.installed ? `control :${control.control_port} closed` : "tor not installed");
+  }, () => { $("s-tor").textContent = "—"; });
+}
+document.getElementById("refresh").addEventListener("click", load);
+document.addEventListener("DOMContentLoaded", load);
+</script>
+{% endblock %}

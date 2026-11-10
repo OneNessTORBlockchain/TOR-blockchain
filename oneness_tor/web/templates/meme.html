@@ -1,0 +1,618 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <div class="row">
+    <div>
+      <div class="eyebrow">meme launcher · on-chain · real swaps</div>
+      <h2 style="margin:0">Meme coin launcher</h2>
+      <p class="tiny" style="margin:.3rem 0 0">
+        Tokens, pools and swaps are signed transactions on the TOR ledger. The chain itself
+        charges <b>5 TOR</b> to create a token and <b>10 TOR</b> to launch a pool, and settles
+        every swap at 0.30%. External DEX routes are honest placeholders
+        (<code>DEX_NOT_DEPLOYED</code>) until the bridge-era pools exist.
+      </p>
+    </div>
+    <div class="spacer"></div>
+    <span class="badge ok">5 TOR create</span>
+    <span class="badge ok">10 TOR pool</span>
+    <span class="badge info">0.30% swap</span>
+  </div>
+  <div class="grid g4" style="margin-top:.9rem">
+    <div class="stat"><div class="k">tokens on chain</div><div class="v" id="stat-tokens">…</div>
+      <div class="s">from /api/tokens</div></div>
+    <div class="stat magenta"><div class="k">live pools</div><div class="v" id="stat-pools">…</div>
+      <div class="s">constant product</div></div>
+    <div class="stat lime"><div class="k">tools ready</div><div class="v" id="stat-ready">…</div>
+      <div class="s">executable now</div></div>
+    <div class="stat gold"><div class="k">placeholders</div><div class="v" id="stat-todo">…</div>
+      <div class="s">answer 501, never fake</div></div>
+  </div>
+</section>
+
+<section class="grid g2">
+  <div class="panel">
+    <h2><span class="dot"></span>Create a meme coin <span class="badge warn">5 TOR</span></h2>
+    <div class="grid g2" style="gap:.5rem">
+      <div class="field"><label for="create-symbol">ticker (2-10 A-Z0-9)</label>
+        <input id="create-symbol" placeholder="ONION" maxlength="10"></div>
+      <div class="field"><label for="create-name">name</label>
+        <input id="create-name" placeholder="Onion Rocket"></div>
+      <div class="field"><label for="create-supply">supply</label>
+        <input id="create-supply" type="number" min="1" step="1" value="1000000"></div>
+      <div class="field"><label for="create-wallet">pay from</label>
+        <select id="create-wallet"></select></div>
+    </div>
+    <label for="create-description">description</label>
+    <textarea id="create-description" style="min-height:70px"
+      placeholder="A community coin for Tor-first builders."></textarea>
+    <div class="grid g2" style="gap:.5rem">
+      <div class="field"><label for="create-image">image URL (optional)</label>
+        <input id="create-image" placeholder="https://… or ipfs://…"></div>
+      <div class="field"><label for="create-socials">socials (comma separated)</label>
+        <input id="create-socials" placeholder="https://t.me/…, https://x.com/…"></div>
+    </div>
+    <div class="row" style="margin-top:.6rem">
+      <button class="btn" id="create-token">create on chain</button>
+      <span class="tiny muted" id="create-status"></span>
+    </div>
+    <div id="create-out" style="margin-top:.6rem"></div>
+  </div>
+
+  <div class="panel">
+    <h2><span class="dot"></span>Launch liquidity <span class="badge warn">10 TOR</span></h2>
+    <p class="tiny muted" style="margin:.2rem 0 .4rem">
+      Moves the token reserve and the TOR reserve into the pool account and charges 10 TOR —
+      one <code>pool_create</code> transaction.
+    </p>
+    <div class="field"><label for="pool-symbol">token</label><select id="pool-symbol"></select></div>
+    <div class="grid g2" style="gap:.5rem">
+      <div class="field"><label for="pool-tokens">token reserve</label>
+        <input id="pool-tokens" type="number" min="1" step="1" value="500000"></div>
+      <div class="field"><label for="pool-tor">TOR reserve</label>
+        <input id="pool-tor" type="number" min="0.1" step="0.1" value="100"></div>
+    </div>
+    <div class="field"><label for="pool-wallet">pay from</label><select id="pool-wallet"></select></div>
+    <div class="row" style="margin-top:.6rem">
+      <button class="btn magenta" id="create-pool">launch pool</button>
+      <span class="tiny muted" id="pool-status"></span>
+    </div>
+    <div id="pool-out" style="margin-top:.6rem"></div>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="row">
+    <h2 style="margin:0"><span class="dot"></span>Tokens</h2>
+    <div class="spacer"></div>
+    <button class="btn ghost small" id="refresh-tokens">refresh</button>
+  </div>
+  <div id="tokens" style="margin-top:.6rem">loading…</div>
+</section>
+<section class="grid g2">
+  <div class="panel">
+    <h2><span class="dot"></span>Trade — real pool swap</h2>
+    <div class="grid g3" style="gap:.5rem">
+      <div class="field"><label for="trade-symbol">token</label><select id="trade-symbol"></select></div>
+      <div class="field"><label for="trade-side">side</label>
+        <select id="trade-side"><option value="buy">buy (TOR → token)</option>
+          <option value="sell">sell (token → TOR)</option></select></div>
+      <div class="field"><label for="trade-amount">amount</label>
+        <input id="trade-amount" type="number" min="0.00000001" step="any" value="5"></div>
+    </div>
+    <div class="field"><label for="trade-wallet">wallet</label><select id="trade-wallet"></select></div>
+    <div class="row" style="margin-top:.6rem">
+      <button class="btn ghost" id="quote">quote</button>
+      <button class="btn lime" id="swap">swap on chain</button>
+      <span class="tiny muted" id="trade-status"></span>
+    </div>
+    <div id="trade-out" style="margin-top:.6rem"></div>
+  </div>
+
+  <div class="panel">
+    <h2><span class="dot"></span>Market</h2>
+    <div class="field"><label for="market-symbol">token</label><select id="market-symbol"></select></div>
+    <div id="market" style="margin-top:.6rem">pick a token…</div>
+  </div>
+</section>
+
+<section class="grid g2">
+  <div class="panel">
+    <h2><span class="dot"></span>Volume bot <span class="badge warn">10 TOR / 15 min</span></h2>
+    <p class="tiny muted" style="margin:.2rem 0 .4rem">
+      The session is paid and queued. The trading engine is <b>not deployed</b>, so running it
+      answers <code>ENGINE_NOT_DEPLOYED</code> and no trades are placed.
+    </p>
+    <div class="grid g3" style="gap:.5rem">
+      <div class="field"><label for="session-symbol">token</label><select id="session-symbol"></select></div>
+      <div class="field"><label for="session-rounds">rounds</label>
+        <input id="session-rounds" type="number" min="1" max="500" value="10"></div>
+      <div class="field"><label for="session-wallet">wallet</label><select id="session-wallet"></select></div>
+    </div>
+    <div class="row" style="margin-top:.6rem">
+      <button class="btn" id="create-session">pay &amp; queue session</button>
+      <span class="tiny muted" id="session-status"></span>
+    </div>
+    <div id="session-out" style="margin-top:.6rem"></div>
+    <div id="sessions" style="margin-top:.6rem">loading…</div>
+  </div>
+
+  <div class="panel">
+    <h2><span class="dot"></span>Promotions &amp; trending</h2>
+    <div class="grid g3" style="gap:.5rem">
+      <div class="field"><label for="promo-symbol">token</label><select id="promo-symbol"></select></div>
+      <div class="field"><label for="promo-kind">slot</label>
+        <select id="promo-kind"><option value="trending">trending · 5 TOR/day</option>
+          <option value="banner">banner · 30 TOR/7d</option></select></div>
+      <div class="field"><label for="promo-days">days (trending)</label>
+        <input id="promo-days" type="number" min="1" max="30" value="1"></div>
+    </div>
+    <div class="field"><label for="promo-wallet">wallet</label><select id="promo-wallet"></select></div>
+    <div class="row" style="margin-top:.6rem">
+      <button class="btn magenta" id="promote">buy slot</button>
+      <span class="tiny muted" id="promo-status"></span>
+    </div>
+    <div id="promo-out" style="margin-top:.6rem"></div>
+    <div id="board" style="margin-top:.6rem">loading…</div>
+  </div>
+</section>
+
+<section class="grid g2">
+  <div class="panel">
+    <h2><span class="dot"></span>AI landing page <span class="badge warn">10 TOR</span></h2>
+    <div class="grid g3" style="gap:.5rem">
+      <div class="field"><label for="landing-symbol">token</label><select id="landing-symbol"></select></div>
+      <div class="field"><label for="landing-model">model</label><select id="landing-model"></select></div>
+      <div class="field"><label for="landing-wallet">wallet</label><select id="landing-wallet"></select></div>
+    </div>
+    <label for="landing-prompt">optional brief</label>
+    <textarea id="landing-prompt" style="min-height:70px"
+      placeholder="Leave empty for the launcher's token brief."></textarea>
+    <div class="row" style="margin-top:.6rem">
+      <button class="btn" id="landing">build &amp; host</button>
+      <span class="tiny muted" id="landing-status"></span>
+    </div>
+    <div id="landing-out" style="margin-top:.6rem"></div>
+  </div>
+
+  <div class="panel">
+    <h2><span class="dot"></span>DEX seams</h2>
+    <div id="venues" style="margin-top:.4rem">loading…</div>
+    <div class="row" style="margin-top:.6rem">
+      <button class="btn ghost small" id="dex-quote">external quote</button>
+      <button class="btn ghost small" id="dex-swap">external swap</button>
+      <span class="tiny muted" id="dex-status"></span>
+    </div>
+    <div id="dex-out" style="margin-top:.5rem"></div>
+    <label for="dex-link">paste any DEX link (parser is live)</label>
+    <input id="dex-link" placeholder="https://dexscreener.com/solana/…">
+    <div class="row" style="margin-top:.4rem">
+      <button class="btn ghost small" id="parse-link">parse</button>
+      <span class="tiny muted" id="link-status"></span>
+    </div>
+    <div id="link-out" style="margin-top:.5rem"></div>
+  </div>
+</section>
+
+<section class="panel">
+  <h2><span class="dot"></span>Every launcher tool</h2>
+  <div id="tools" style="margin-top:.6rem">loading…</div>
+</section>
+
+<section class="panel">
+  <h2><span class="dot"></span>Live calls</h2>
+  <div id="api-log" class="log" style="max-height:180px"></div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const $ = id => document.getElementById(id);
+let tokens = [];
+
+function show(id, html) { $(id).innerHTML = html; }
+function err(problem) {
+  return `<span class="badge bad">${OT.esc(problem.code || "ERROR")}</span>
+    <span class="tiny">${OT.esc(problem.message)}</span>`;
+}
+function options(select, rows, value, label) {
+  if (!select) return;
+  select.innerHTML = rows.map(row =>
+    `<option value="${OT.esc(row[value])}">${OT.esc(label(row))}</option>`).join("")
+    || `<option value="">nothing available</option>`;
+}
+
+async function wallets() {
+  const list = await OT.myWallets();
+  ["create-wallet", "pool-wallet", "trade-wallet", "session-wallet",
+   "promo-wallet", "landing-wallet"].forEach(id =>
+    OT.fillWalletSelect($(id), list));
+  if (!list.length) {
+    OT.toast("sign in at /wallet — mints, pools and swaps are paid by your own wallet", "bad");
+  }
+}
+
+async function loadTokens() {
+  try {
+    const data = await OT.get("/api/meme/tokens");
+    tokens = data.tokens || [];
+    $("stat-tokens").textContent = OT.fmtInt(data.count);
+    $("stat-pools").textContent = OT.fmtInt(tokens.filter(row => row.pool).length);
+    const label = row => `${row.symbol} · ${row.name || ""}`;
+    ["pool-symbol", "trade-symbol", "market-symbol", "session-symbol",
+     "promo-symbol", "landing-symbol"].forEach(id =>
+      options($(id), tokens, "symbol", label));
+    $("tokens").innerHTML = OT.table(tokens, [
+      { label: "logo", render: row => {
+          const image = OT.tokenIcon(row);
+          return `<img class="token-icon" src="${OT.esc(image.src)}" alt="${OT.esc(row.symbol)}"
+                       title="${OT.esc(image.source)}"
+                       loading="${image.local ? "eager" : "lazy"}">`;
+        } },
+      { label: "ticker", cls: "mono", render: row => `<b>${OT.esc(row.symbol)}</b>` },
+      { label: "name", render: row => OT.esc(row.name || "—") },
+      { label: "supply", cls: "mono", render: row => OT.fmtInt(row.supply) },
+      { label: "price", cls: "mono", render: row => row.price_tor
+          ? `${row.price_tor} TOR` : `<span class="badge warn">no pool</span>` },
+      { label: "liquidity", cls: "mono", render: row => row.pool
+          ? `${row.liquidity_tor} TOR` : "—" },
+      { label: "market cap", cls: "mono", render: row => row.market_cap_tor
+          ? `${OT.fmtInt(row.market_cap_tor)} TOR` : "-" },
+      { label: "24h volume", cls: "mono", render: row => row.volume_24h_tor
+          ? `${OT.fmtTor(row.volume_24h_tor * 1e8)} TOR` : "-" },
+      { label: "mint", cls: "mono", render: row => OT.esc(row.mint_address || "-") },
+      { label: "promoted", render: row => row.promoted
+          ? `<span class="badge ok">trending</span>` : `<span class="badge">—</span>` },
+      { label: "open", render: row =>
+          `<button class="btn ghost small" data-open="${OT.esc(row.symbol)}">select</button>` },
+    ], "no tokens on this chain yet — create the first one above");
+    if (tokens.length) loadMarket($("market-symbol").value || tokens[0].symbol);
+  } catch (problem) {
+    $("tokens").innerHTML = err(problem);
+  }
+}
+
+async function loadTools() {
+  try {
+    const data = await OT.get("/api/meme/tools");
+    $("stat-ready").textContent = `${data.ready}/${data.tools.length}`;
+    $("stat-todo").textContent = OT.fmtInt(data.placeholders);
+    $("tools").innerHTML = OT.table(data.tools, [
+      { label: "tool", cls: "mono", key: "id" },
+      { label: "what", key: "label" },
+      { label: "TOR", cls: "mono", render: row => row.cost_tor ? row.cost_tor : "—" },
+      { label: "endpoint", cls: "mono", render: row => OT.esc(row.endpoint) },
+      { label: "state", render: row => row.ready
+          ? `<span class="badge ok">live</span>`
+          : `<span class="badge warn">${OT.esc(row.placeholder || "placeholder")}</span>` },
+    ]);
+  } catch (problem) {
+    $("tools").innerHTML = err(problem);
+  }
+}
+
+async function createToken() {
+  const symbol = $("create-symbol").value.trim().toUpperCase();
+  if (!symbol) { OT.toast("a ticker is required", "bad"); return; }
+  $("create-token").disabled = true;
+  $("create-status").innerHTML = `<span class="spinner"></span> signing token_create…`;
+  try {
+    const data = await OT.post("/api/meme/tokens", {
+      symbol, name: $("create-name").value.trim(),
+      supply: Number($("create-supply").value),
+      description: $("create-description").value.trim(),
+      image: $("create-image").value.trim(),
+      socials: $("create-socials").value.split(",").map(text => text.trim()).filter(Boolean),
+      wallet: $("create-wallet").value || "founder",
+    });
+    show("create-out", `<span class="badge ok">token created</span>` + OT.kv([
+      ["ticker", `<b>${OT.esc(data.token.symbol)}</b>`],
+      ["supply", OT.fmtInt(data.token.supply)],
+      ["owner", `<span class="mono">${OT.esc(data.token.owner)}</span>`],
+      ["txid", `<span class="mono">${OT.esc(data.txid)}</span>`],
+      ["height", OT.esc(data.height)],
+      ["fee", `${data.fee.tor} TOR — ${OT.esc(data.fee.charged_by)}`],
+    ]));
+    $("create-status").textContent = "";
+    await loadTokens();
+  } catch (problem) {
+    $("create-status").textContent = "";
+    show("create-out", err(problem));
+  } finally { $("create-token").disabled = false; }
+}
+
+async function createPool() {
+  const symbol = $("pool-symbol").value;
+  if (!symbol) { OT.toast("create a token first", "bad"); return; }
+  $("create-pool").disabled = true;
+  $("pool-status").innerHTML = `<span class="spinner"></span> signing pool_create…`;
+  try {
+    const data = await OT.post("/api/meme/pools", {
+      symbol, token_amount: Number($("pool-tokens").value),
+      tor_amount: Number($("pool-tor").value),
+      wallet: $("pool-wallet").value || "founder",
+    });
+    show("pool-out", `<span class="badge ok">pool live</span>` + OT.kv([
+      ["reserves", `${data.pool.token_reserve} ${symbol} / ${data.pool.tor_reserve_tor} TOR`],
+      ["price", `${data.pool.price_tor} TOR per ${symbol}`],
+      ["txid", `<span class="mono">${OT.esc(data.txid)}</span>`],
+      ["height", OT.esc(data.height)],
+      ["fee", `${data.fee.tor} TOR — ${OT.esc(data.fee.charged_by)}`],
+    ]));
+    $("pool-status").textContent = "";
+    await loadTokens();
+  } catch (problem) {
+    $("pool-status").textContent = "";
+    show("pool-out", err(problem));
+  } finally { $("create-pool").disabled = false; }
+}
+
+async function quote() {
+  const symbol = $("trade-symbol").value;
+  if (!symbol) { OT.toast("no token selected", "bad"); return; }
+  try {
+    const data = await OT.get(`/api/meme/quote?symbol=${encodeURIComponent(symbol)}` +
+      `&side=${encodeURIComponent($("trade-side").value)}` +
+      `&amount=${encodeURIComponent($("trade-amount").value)}`);
+    show("trade-out", `<span class="badge info">quote</span>` + OT.kv([
+      ["you send", `${data.amount_in} ${data.unit_in}`],
+      ["you receive", data.side === "buy"
+        ? `${OT.fmtInt(data.amount_out)} ${data.unit_out}`
+        : `${data.amount_out_tor} TOR`],
+      ["fee", `${data.fee_tor} TOR (${data.fee_bps} bps)`],
+      ["price", `${data.price_tor} TOR per ${data.symbol}`],
+    ]));
+  } catch (problem) { show("trade-out", err(problem)); }
+}
+
+async function swap() {
+  const symbol = $("trade-symbol").value;
+  if (!symbol) { OT.toast("no token selected", "bad"); return; }
+  $("swap").disabled = true;
+  $("trade-status").innerHTML = `<span class="spinner"></span> signing swap…`;
+  try {
+    const data = await OT.post(`/api/meme/pools/${encodeURIComponent(symbol)}/swap`, {
+      side: $("trade-side").value, amount: Number($("trade-amount").value),
+      wallet: $("trade-wallet").value || "founder",
+    });
+    show("trade-out", `<span class="badge ok">swapped on chain</span>` + OT.kv([
+      ["side", OT.esc(data.swap.side)],
+      ["sent", `${data.swap.amount_in} ${data.swap.unit_in}`],
+      ["expected out", `${data.swap.expected_out} ${data.swap.unit_out}`],
+      ["txid", `<span class="mono">${OT.esc(data.txid)}</span>`],
+      ["height", OT.esc(data.height)],
+    ]));
+    $("trade-status").textContent = "";
+    await loadTokens();
+  } catch (problem) {
+    $("trade-status").textContent = "";
+    show("trade-out", err(problem));
+  } finally { $("swap").disabled = false; }
+}
+
+async function loadMarket(symbol) {
+  if (!symbol) return;
+  $("market").textContent = "reading /api/meme/market…";
+  try {
+    const data = await OT.get(`/api/meme/tokens/${encodeURIComponent(symbol)}/market`);
+    show("market", OT.kv([
+      ["token", `<b>${OT.esc(data.symbol)}</b> · ${OT.esc(data.token.name || "")}`],
+      ["price", data.price_tor ? `${data.price_tor} TOR` : "no pool yet"],
+      ["liquidity", `${data.liquidity_tor} TOR`],
+      ["market cap", data.market_cap_tor ? `${OT.fmtInt(data.market_cap_tor)} TOR` : "—"],
+      ["reserves", data.pool
+        ? `${data.pool.token_reserve} ${data.symbol} / ${data.pool.tor_reserve_tor} TOR` : "—"],
+      ["swaps (window)", `${data.volume.swaps_in_window} · bought ${data.volume.buy_tor} TOR`],
+      ["promotions", data.promotions.length ? OT.esc(data.promotions.length) : "none"],
+      ["chart", OT.esc(data.chart.note)],
+    ]));
+  } catch (problem) { show("market", err(problem)); }
+}
+
+async function createSession() {
+  const symbol = $("session-symbol").value;
+  if (!symbol) { OT.toast("no token selected", "bad"); return; }
+  $("create-session").disabled = true;
+  $("session-status").innerHTML = `<span class="spinner"></span> charging 10 TOR…`;
+  try {
+    const data = await OT.post("/api/meme/volume-sessions", {
+      symbol, rounds: Number($("session-rounds").value),
+      wallet: $("session-wallet").value || "founder",
+    });
+    show("session-out", `<span class="badge warn">queued · engine not deployed</span>` +
+      OT.kv([
+        ["session", OT.esc(data.session.id)],
+        ["status", OT.esc(data.session.status)],
+        ["paid", `${data.charge.amount_tor} TOR`],
+        ["txid", `<span class="mono">${OT.esc(data.txid || data.charge.txid)}</span>`],
+        ["note", OT.esc(data.honest)],
+      ]));
+    $("session-status").textContent = "";
+    await loadSessions();
+  } catch (problem) {
+    $("session-status").textContent = "";
+    show("session-out", err(problem));
+  } finally { $("create-session").disabled = false; }
+}
+
+async function loadSessions() {
+  try {
+    const data = await OT.get("/api/meme/volume-sessions");
+    $("sessions").innerHTML = OT.table(data.sessions, [
+      { label: "id", cls: "mono", key: "id" },
+      { label: "token", cls: "mono", key: "symbol" },
+      { label: "rounds", cls: "mono", key: "rounds" },
+      { label: "paid", cls: "mono", key: "paid_tor" },
+      { label: "status", render: row => `<span class="badge warn">${OT.esc(row.status)}</span>` },
+      { label: "run", render: row =>
+          `<button class="btn ghost small" data-run="${OT.esc(row.id)}">run</button>` },
+    ], "no volume sessions yet");
+  } catch (problem) { $("sessions").innerHTML = err(problem); }
+}
+
+async function runSession(id) {
+  $("session-status").innerHTML = `<span class="spinner"></span> asking the engine…`;
+  try {
+    const data = await OT.post(`/api/meme/volume-sessions/${encodeURIComponent(id)}/run`, {});
+    show("session-out", `<span class="badge ok">ran</span>` + OT.json(data));
+  } catch (problem) {
+    show("session-out", `<span class="badge warn">${OT.esc(problem.code)}</span>
+      <span class="tiny">${OT.esc(problem.message)}</span>`);
+  } finally { $("session-status").textContent = ""; }
+}
+
+async function promote() {
+  const symbol = $("promo-symbol").value;
+  if (!symbol) { OT.toast("no token selected", "bad"); return; }
+  $("promote").disabled = true;
+  $("promo-status").innerHTML = `<span class="spinner"></span> buying slot…`;
+  try {
+    const data = await OT.post("/api/meme/promotions", {
+      symbol, kind: $("promo-kind").value, days: Number($("promo-days").value),
+      wallet: $("promo-wallet").value || "founder",
+    });
+    show("promo-out", `<span class="badge ok">slot active</span>` + OT.kv([
+      ["slot", OT.esc(data.promotion.kind)],
+      ["days", OT.esc(data.promotion.days)],
+      ["paid", `${data.charge.amount_tor} TOR`],
+      ["ends", OT.when(data.ends_at)],
+      ["txid", `<span class="mono">${OT.esc(data.promotion.txid || "—")}</span>`],
+    ]));
+    $("promo-status").textContent = "";
+    await loadBoard();
+  } catch (problem) {
+    $("promo-status").textContent = "";
+    show("promo-out", err(problem));
+  } finally { $("promote").disabled = false; }
+}
+
+async function loadBoard() {
+  try {
+    const data = await OT.get("/api/meme/trending");
+    const rows = (data.board || []).map((row, index) => ({ ...row, rank: index + 1 }));
+    $("board").innerHTML = OT.table(rows, [
+      { label: "#", cls: "mono", key: "rank" },
+      { label: "ticker", cls: "mono", render: row => `<b>${OT.esc(row.symbol)}</b>` },
+      { label: "liquidity", cls: "mono", render: row => `${row.liquidity_tor} TOR` },
+      { label: "price", cls: "mono", render: row => row.price_tor || "—" },
+      { label: "slot", render: row => row.promoted
+          ? `<span class="badge ok">promoted</span>` : `<span class="badge">organic</span>` },
+    ], "no tokens yet");
+  } catch (problem) { $("board").innerHTML = err(problem); }
+}
+
+async function landing() {
+  const symbol = $("landing-symbol").value;
+  if (!symbol) { OT.toast("no token selected", "bad"); return; }
+  $("landing").disabled = true;
+  $("landing-status").innerHTML = `<span class="spinner"></span> the model is building the page…`;
+  try {
+    const data = await OT.post(`/api/meme/tokens/${encodeURIComponent(symbol)}/landing`, {
+      wallet: $("landing-wallet").value || "founder",
+      prompt: $("landing-prompt").value.trim(),
+      model: $("landing-model").value || undefined,
+    });
+    show("landing-out", `<span class="badge ok">site built</span>` + OT.kv([
+      ["site", OT.esc(data.site.id)],
+      ["bytes", OT.fmtInt(data.bytes)],
+      ["model", OT.esc(data.model)],
+      ["charged", `${data.charge.amount_tor} TOR`],
+      ["preview", `<a href="${OT.esc(data.site.preview_url)}" target="_blank" rel="noopener">open ↗</a>`],
+    ]));
+    $("landing-status").textContent = "";
+    await loadTokens();
+  } catch (problem) {
+    $("landing-status").textContent = "";
+    show("landing-out", err(problem));
+  } finally { $("landing").disabled = false; }
+}
+
+async function loadVenues() {
+  try {
+    const data = await OT.get("/api/meme/dex/venues");
+    $("venues").innerHTML = OT.table(data.venues, [
+      { label: "venue", cls: "mono", render: row => `<b>${OT.esc(row.id)}</b>` },
+      { label: "name", key: "name" },
+      { label: "fee", cls: "mono", key: "fee" },
+      { label: "state", render: row => row.available
+          ? `<span class="badge ok">live</span>`
+          : `<span class="badge warn">${OT.esc(row.status)}</span>` },
+      { label: "note", render: row => `<span class="tiny muted">${OT.esc(row.note)}</span>` },
+    ]);
+  } catch (problem) { $("venues").innerHTML = err(problem); }
+}
+
+async function dexQuote() {
+  const symbol = $("trade-symbol").value || "TOR";
+  try {
+    const data = await OT.get(`/api/meme/dex/quote?symbol=${encodeURIComponent(symbol)}` +
+      `&side=buy&amount=1`);
+    show("dex-out", `<span class="badge ok">answered</span>` + OT.json(data));
+  } catch (problem) {
+    show("dex-out", `<span class="badge warn">${OT.esc(problem.code)}</span>
+      <span class="tiny">${OT.esc(problem.message)}</span>
+      <pre class="code">${OT.esc(JSON.stringify(problem.details || {}, null, 2))}</pre>`);
+  }
+}
+
+async function dexSwap() {
+  const symbol = $("trade-symbol").value || "TOR";
+  try {
+    const data = await OT.post("/api/meme/dex/swap",
+      { symbol, side: "buy", amount: 1, wallet: "founder" });
+    show("dex-out", `<span class="badge ok">answered</span>` + OT.json(data));
+  } catch (problem) {
+    show("dex-out", `<span class="badge warn">${OT.esc(problem.code)}</span>
+      <span class="tiny">${OT.esc(problem.message)}</span>
+      <pre class="code">${OT.esc(JSON.stringify(problem.details || {}, null, 2))}</pre>`);
+  }
+}
+
+async function parseLink() {
+  const url = $("dex-link").value.trim();
+  if (!url) { OT.toast("paste a link first", "bad"); return; }
+  try {
+    const data = await OT.get(`/api/meme/dex/link?url=${encodeURIComponent(url)}`);
+    show("link-out", `<span class="badge ${data.ok ? "ok" : "warn"}">${OT.esc(data.ok ? "parsed" : "no address found")}</span>` +
+      OT.kv([
+        ["source", OT.esc(data.label || "—")],
+        ["kind", OT.esc(data.kind || "—")],
+        ["mint", data.mint ? `<span class="mono">${OT.esc(data.mint)}</span>` : "—"],
+        ["pair", data.pair ? `<span class="mono">${OT.esc(data.pair)}</span>` : "—"],
+      ]));
+  } catch (problem) { show("link-out", err(problem)); }
+}
+
+$("create-token").addEventListener("click", createToken);
+$("create-pool").addEventListener("click", createPool);
+$("quote").addEventListener("click", quote);
+$("swap").addEventListener("click", swap);
+$("create-session").addEventListener("click", createSession);
+$("promote").addEventListener("click", promote);
+$("landing").addEventListener("click", landing);
+$("dex-quote").addEventListener("click", dexQuote);
+$("dex-swap").addEventListener("click", dexSwap);
+$("parse-link").addEventListener("click", parseLink);
+$("refresh-tokens").addEventListener("click", () => { loadTokens(); loadBoard(); });
+$("market-symbol").addEventListener("change", () => loadMarket($("market-symbol").value));
+$("tokens").addEventListener("click", event => {
+  const button = event.target.closest("[data-open]");
+  if (!button) return;
+  $("market-symbol").value = button.dataset.open;
+  loadMarket(button.dataset.open);
+});
+$("sessions").addEventListener("click", event => {
+  const button = event.target.closest("[data-run]");
+  if (button) runSession(button.dataset.run);
+});
+
+document.addEventListener("DOMContentLoaded", async () => {
+  await wallets();
+  await loadTokens();
+  loadTools();
+  loadSessions();
+  loadBoard();
+  loadVenues();
+  OT.models($("landing-model"));
+});
+</script>
+{% endblock %}

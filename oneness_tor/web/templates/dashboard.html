@@ -1,0 +1,248 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <div class="row" style="align-items:flex-start">
+    <div>
+      <div class="eyebrow">ollama · live schema · real calls</div>
+      <h2 style="margin:0">Command deck</h2>
+      <p class="tiny" style="margin:.3rem 0 0">
+        Ask anything about the node. The model is given every endpoint plus a fresh chain
+        snapshot, and it must call <code>fetch_oneness_data</code> before it states a number.
+        Public page, no token: <a href="/wallet">sign in</a> with a username + password and the
+        answer is billed to nobody — the session only identifies you to the node.
+      </p>
+    </div>
+    <div class="spacer"></div>
+    <div class="field" style="min-width:220px">
+      <label for="model">model</label>
+      <select id="model"></select>
+    </div>
+    <div class="field" style="align-self:flex-end">
+      <label class="switch"><input type="checkbox" id="tools" checked> use API tools</label>
+    </div>
+    <button class="btn ghost small" id="show-prompt" style="align-self:flex-end">system prompt</button>
+  </div>
+
+  <div class="deck" style="margin-top:.9rem">
+    <div>
+      <div class="prompt-box">
+        <textarea id="prompt" placeholder="e.g. how much TOR does the founder wallet hold, and what did the last 3 public records do?"></textarea>
+        <div class="row" style="margin-top:.6rem">
+          <button class="btn" id="send">▶ Run command</button>
+          <button class="btn ghost small" id="clear">clear</button>
+          <span class="tiny muted" id="status"></span>
+        </div>
+        <div class="voice-bar" style="margin-top:.5rem">
+          <label class="switch"><input type="checkbox" id="voice-on" checked> play response</label>
+          <span class="badge info">female voice</span>
+          <span class="tiny muted" id="voice-name"></span>
+          <div class="spacer"></div>
+          <button class="btn ghost small" id="voice-record" type="button">● record</button>
+          <span class="tiny muted" id="voice-status"></span>
+        </div>
+      </div>
+      <div class="quick" id="quick">
+        <button data-prompt="What is the chain height, total supply and founder balance right now?">chain snapshot</button>
+        <button data-prompt="List the last 5 public records with their kind, amount in TOR and txid.">last records</button>
+        <button data-prompt="Which price codes exist and what do they cost? Show the locked ones first.">price table</button>
+        <button data-prompt="Show every wallet, its address and its balance in TOR.">wallets</button>
+        <button data-prompt="Are there open invoices? What is the total settled revenue so far?">invoices</button>
+        <button data-prompt="Which Ollama models are installed and which one is loaded in memory?">models</button>
+      </div>
+      <div class="answer" id="answer" style="margin-top:.8rem">
+        <span class="muted tiny">The answer appears here, with the endpoints it used in the log →</span>
+      </div>
+    </div>
+
+    <div>
+      <h3 style="font-size:.82rem;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim)">
+        API calls this session
+      </h3>
+      <div id="tool-log" class="log" style="min-height:220px"></div>
+      <h3 style="font-size:.82rem;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim);margin-top:.9rem">
+        every HTTP call (any page)
+      </h3>
+      <div id="api-log" class="log" style="max-height:190px"></div>
+    </div>
+  </div>
+</section>
+
+<details class="panel" id="prompt-panel">
+  <summary style="cursor:pointer;font-weight:600">What the model actually receives</summary>
+  <p class="tiny">Fetched from <code>GET /api/ollama/prompt</code> — persona, rules, a live chain
+     snapshot and all endpoints with their return shapes.</p>
+  <pre class="code" id="system-prompt" style="max-height:520px">loading…</pre>
+</details>
+
+<section class="grid g4" id="overview">
+  <div class="stat"><div class="k">height</div><div class="v" id="o-height">…</div><div class="s" id="o-chain">—</div></div>
+  <div class="stat gold"><div class="k">founder</div><div class="v" id="o-founder">…</div><div class="s">TOR</div></div>
+  <div class="stat lime"><div class="k">tokens</div><div class="v" id="o-tokens">…</div><div class="s" id="o-contracts">contracts</div></div>
+  <div class="stat magenta"><div class="k">revenue</div><div class="v" id="o-revenue">…</div><div class="s" id="o-invoices">invoices</div></div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const $ = id => document.getElementById(id);
+let history = [];
+
+/* -------------------------------------------------------------- the voice */
+/* Same female voice as /ollama: the command deck is the blockchain interface.
+   ON/OFF is remembered; record transcribes into the prompt box. */
+const VOICE_GENDER = "female";
+let recorder = null;
+
+function voiceOn() { return $("voice-on").checked; }
+
+function stopRecording() {
+  if (recorder) recorder.stop();
+  recorder = null;
+  $("voice-record").classList.remove("rec-on");
+  $("voice-status").textContent = "";
+}
+
+function initVoice() {
+  $("voice-on").checked = OT.voice.enabled("dashboard", true);
+  const support = OT.voice.supported();
+  $("voice-name").textContent = support.speech
+    ? OT.voice.voiceName(VOICE_GENDER)
+    : "no speech synthesis in this browser";
+  if (!support.recognition) {
+    $("voice-record").disabled = true;
+    $("voice-record").title = "speech recognition needs Chrome or Edge";
+    $("voice-status").textContent = "record needs Chrome or Edge";
+  }
+}
+
+$("voice-on").addEventListener("change", () => {
+  OT.voice.remember("dashboard", $("voice-on").checked);
+  if (!voiceOn()) OT.voice.stop();
+});
+
+$("voice-record").addEventListener("click", () => {
+  if (recorder) { stopRecording(); return; }
+  $("voice-status").textContent = "listening…";
+  $("voice-record").classList.add("rec-on");
+  recorder = OT.voice.listen({
+    onText: text => { $("prompt").value = text; },
+    onEnd: stopRecording,
+    onError: reason => { $("voice-status").textContent = reason; },
+  });
+  if (!recorder) { $("voice-record").classList.remove("rec-on"); $("voice-status").textContent = ""; }
+});
+
+function renderCalls(calls) {
+  if (!calls || !calls.length) {
+    $("tool-log").innerHTML = `<div class="log-line"><span class="st bad">—</span>` +
+      `<span class="name">no API call was needed</span></div>`;
+    return;
+  }
+  $("tool-log").innerHTML = calls.map(call => {
+    const ok = call.ok ? "ok" : "bad";
+    const status = call.http_status ?? "—";
+    const request = call.request || {};
+    return `<div class="log-line"><span class="st ${ok}">${status}</span>` +
+      `<span class="name">${OT.esc(call.endpoint)}` +
+      `<br><span class="muted">${OT.esc(request.method)} ${OT.esc(request.url)}</span></span>` +
+      `<span class="ms">${call.latency_ms ?? "—"}ms</span></div>`;
+  }).join("");
+}
+
+async function run(prompt) {
+  const text = (prompt ?? $("prompt").value).trim();
+  if (!text) { OT.toast("type a command first", "bad"); return; }
+  $("send").disabled = true;
+  $("status").innerHTML = `<span class="spinner"></span> thinking — the model may call the API a few times`;
+  $("answer").innerHTML = `<span class="muted tiny">working…</span>`;
+  try {
+    const data = await OT.post("/api/ai/command", {
+      prompt: text, model: $("model").value || undefined, use_tools: $("tools").checked,
+    });
+    $("answer").innerHTML = OT.md(data.answer || "(the model returned an empty answer)");
+    if (voiceOn()) OT.voice.speak(data.answer || "", { gender: VOICE_GENDER });
+    if (data.use_tools && !data.verified) {
+      $("answer").insertAdjacentHTML("afterbegin",
+        `<div class="badge bad" style="display:inline-block;margin-bottom:.5rem">` +
+        `unverified — the model did not call the API</div><br>`);
+    }
+    renderCalls(data.api_calls);
+    history = (data.messages || []).slice(-10);
+    $("status").textContent =
+      `${data.model} · ${data.api_calls.length} API call(s) · ${data.system_prompt_chars} chars of schema`;
+  } catch (problem) {
+    $("answer").innerHTML = `<span class="badge bad">${OT.esc(problem.code || "ERROR")}</span> ` +
+      `<span class="tiny">${OT.esc(problem.message)}</span>`;
+    $("status").textContent = "";
+    if (problem.code === "OLLAMA_UNAVAILABLE") {
+      $("answer").innerHTML += `<p class="tiny">Ollama is not answering — open
+        <a href="/ollama">/ollama</a> and use “install” or “start server”.</p>`;
+    }
+  } finally {
+    $("send").disabled = false;
+  }
+}
+
+$("send").addEventListener("click", () => run());
+$("prompt").addEventListener("keydown", event => {
+  if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) run();
+});
+$("clear").addEventListener("click", () => {
+  $("prompt").value = ""; $("answer").innerHTML = ""; history = []; renderCalls([]);
+});
+$("quick").addEventListener("click", event => {
+  const button = event.target.closest("button[data-prompt]");
+  if (!button) return;
+  $("prompt").value = button.dataset.prompt;
+  run(button.dataset.prompt);
+});
+$("show-prompt").addEventListener("click", async () => {
+  const panel = $("prompt-panel");
+  panel.open = true;
+  panel.scrollIntoView({ behavior: "smooth", block: "start" });
+  try {
+    const data = await OT.get("/api/ollama/prompt");
+    $("system-prompt").textContent = data.system_prompt;
+  } catch (problem) {
+    $("system-prompt").textContent = `unavailable: ${problem.message}`;
+  }
+});
+
+async function overview() {
+  try {
+    const info = await OT.get("/api/chain/info");
+    $("o-height").textContent = OT.fmtInt(info.height);
+    $("o-chain").textContent = info.chain_id;
+    const account = await OT.get(`/api/account/${info.founder}`);
+    $("o-founder").textContent = OT.fmtTor(account.balance_micro);
+  } catch (_) {}
+  try {
+    const tokens = await OT.get("/api/meme/tokens");
+    $("o-tokens").textContent = tokens.count;
+    const contracts = await OT.get("/api/contracts");
+    $("o-contracts").textContent = `${contracts.count} contracts`;
+  } catch (_) {}
+  try {
+    const revenue = await OT.get("/api/payments/revenue");
+    $("o-revenue").textContent = revenue.total_tor;
+    $("o-invoices").textContent = `${revenue.count} paid invoices`;
+  } catch (_) {}
+}
+
+document.addEventListener("DOMContentLoaded", async () => {
+  initVoice();
+  OT.models($("model"));
+  overview();
+  renderCalls([]);
+  try {
+    const status = await OT.get("/api/ollama/status");
+    if (!status.reachable) {
+      $("status").innerHTML = `<span class="badge bad">ollama down</span> ` +
+        `<a class="tiny" href="/ollama">fix it</a>`;
+    } else {
+      $("status").textContent = `${status.model_count} models · ${status.api_url}`;
+    }
+  } catch (_) {}
+});
+</script>
+{% endblock %}

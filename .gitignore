@@ -1,0 +1,58 @@
+# OneNess TOR — never commit key material, chain data or build output
+data/wallets/
+data/chain/
+data/chain-demo/
+data/genesis/
+rust/torchain/target/
+__pycache__/
+*.pyc
+.pytest_cache/
+_*.log
+_*.txt
+data/chain-api/
+data/payments/
+data/contracts/
+data/sites/
+data/hosting/
+data/tor/
+data/meme/
+data/nft/
+data/workbench/
+data/ollama_routing.json
+data/policy/
+data/accounts/
+data/price/
+data/metadata/
+data/dev_keys/
+data/chain-*/
+# the snapshots an automated push leaves behind, and the admin panel's price store
+data/snapshots/
+data/admin/
+data/tor/runtime/
+data/node/
+
+# Local node config carries the live admin token — commit config.example.yaml instead
+config.yaml
+config.local.yaml
+
+# .env IS tracked on purpose: this repository is private and the operator wants the
+# Pinata/IPFS credentials active on every checkout and deploy (core.config.load_dotenv
+# reads it; real environment variables still win). Rotate the keys before the repo is
+# ever made public, transferred or forked.
+
+# Caches, logs and local build output
+logs/
+*.log
+.pytest_cache/
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+node_modules/
+build/
+dist/
+*.egg-info/
+.idea/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,9 @@
+# OneNess TOR — Python API, pages and Ollama brain
+flask>=3.0
+Flask-Cors>=4.0
+PyYAML>=6.0
+requests>=2.31
+base58>=2.1
+cryptography>=42
+segno>=1.5
+pytest>=8.0

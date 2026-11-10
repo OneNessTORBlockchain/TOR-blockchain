@@ -1,0 +1,229 @@
+# OneNess TOR - node + API configuration (env vars always win, see core/config.py)
+#
+#   ONENESS_NODE_API         -> node.api_url
+#   ONENESS_ADMIN_TOKEN      -> api.admin_token
+#   ONENESS_API_HOST         -> api.host        (0.0.0.0 on Render/Docker)
+#   ONENESS_API_PORT         -> api.port        (Render injects $PORT)
+#   ONENESS_DATA_DIR         -> paths.data_dir
+#   ONENESS_OLLAMA_URL       -> ollama.base_url       (OLLAMA_HOST also honoured)
+#   ONENESS_OLLAMA_API_KEY   -> ollama.api_key        (OLLAMA_API_KEY also read;
+#                                                      a bearer token for ollama.com)
+#   ONENESS_OLLAMA_MODEL     -> ollama.model
+#   ONENESS_OLLAMA_AUTO_INSTALL -> ollama.auto_install
+#   ONENESS_OLLAMA_PULL      -> ollama.pull_on_start
+#   ONENESS_TOR_CONTROL_PORT -> tor.control_port
+#   ONENESS_TOR_SOCKS_PORT   -> tor.socks_port
+#   ONENESS_TOR_AUTOSTART    -> tor.auto_start       (this node runs `tor` itself)
+#   ONENESS_TOR_AUTO_INSTALL -> tor.auto_install     (apt-get/apk/dnf/yum/brew)
+#   ONENESS_TOR_PUBLISH_NODE -> tor.publish_node     (ADD_ONION the API at boot)
+#   ONENESS_TOR_ONION_KEY    -> tor.onion_key        (the .onion's 64-byte key)
+#   ONENESS_PUBLIC_BASE_URL  -> paths.public_base_url (also: "this host is me" for
+#                                                     the committed fleet origin)
+#   ONENESS_PRIVACY_DEFAULT  -> privacy.default_mode      (public | anonymous)
+#   ONENESS_PRIVACY_LABEL    -> privacy.anonymous_label   (the name on chain)
+#   ONENESS_TOKEN_IMAGES     -> tokens.images.enabled
+
+chain:
+  chain_id: "072316"
+  native_coin_id: TOR111111111111111111111111111111onion
+  data_dir: data/chain                     # Rust ledger: state.json + blocks.jsonl
+  founder_wallet: data/wallets/founder.json
+  founder_allocation: data/genesis/founder_allocation.json
+  binary: rust/torchain/target/release/torchain
+  peers: []                                # read-only sync status (torchain is single-proposer)
+
+node:
+  api_url: http://127.0.0.1:8545           # `torchain serve --bind 127.0.0.1:8545`
+  timeout: 15.0
+  # One container, one command: when api_url is loopback the start command runs
+  # `torchain serve` itself (nothing is spawned for a remote api_url).
+  autostart: true                          # ONENESS_NODE_AUTOSTART=0 turns it off
+  binary: ""                               # ONENESS_NODE_BINARY, else chain.binary, else `torchain` on PATH
+  seed: ""                                 # ONENESS_NODE_SEED: snapshot path or https URL for a fresh node
+  start_timeout: 25.0                      # seconds to wait for GET /health after spawning
+
+api:
+  host: 127.0.0.1
+  port: 8090
+  admin_token: ""               # empty = the node creates data/admin/chain_token on
+                                # first boot and tells its own ledger; set it only to
+                                # pin a token you already have (torchain init printed)
+  # Raise the bar for a headless deployment: every /api call then needs an
+  # x-api-key, an admin credential or a wallet session. OFF by default because
+  # the website calls this same API from the browser. /api/v1 always needs a key.
+  require_key: false                      # env: ONENESS_REQUIRE_API_KEY
+  cors_origins:
+    - http://127.0.0.1:8090
+    - http://localhost:8090
+
+# Developer API keys, sold at /docs and required by /api/v1/<endpoint>.
+dev_keys:
+  default_days: 30                        # a new key's lifetime
+  max_days: 365
+  rate_per_minute: 300                    # env: ONENESS_API_KEY_PER_MINUTE
+  rate_per_day: 50000                     # env: ONENESS_API_KEY_PER_DAY
+
+# IPFS metadata (meme launch + AI-NFT + listing images) through Pinata.
+# Put the credentials in .env at the repo root (tracked in this private repo, loaded
+# by core.config.load_dotenv; an environment variable of the same name wins), never
+# in this file:
+#   PINATA_JWT=...            (preferred)
+#   PINATA_API_KEY=...
+#   PINATA_API_SECRET=...
+#   IPFS_GATEWAY=https://<your-gateway>.mypinata.cloud
+#   PINATA_GATEWAY_TOKEN=...  (a private gateway answers 403 without it)
+ipfs:
+  gateway: https://ipfs.io/ipfs/          # env: IPFS_GATEWAY
+  gateway_token: ""                       # env: PINATA_GATEWAY_TOKEN
+  pinata:
+    enabled: true                         # env: ONENESS_IPFS_PIN
+    timeout: 30.0
+
+paths:
+  data_dir: data
+  public_base_url: http://127.0.0.1:8090   # the Flask API - used by the fetch-data tool
+  images_dir: images
+
+# Token logos shown in the token table: resolved from public metadata
+# (CoinGecko top coins by market cap, DexScreener fallback) and cached on disk.
+# Nothing here changes a price - every price on this node is quoted in TOR.
+tokens:
+  images:
+    enabled: true                         # env: ONENESS_TOKEN_IMAGES
+    ttl_hours: 24                         # re-fetch the logo cache after this
+    per_page: 250                         # CoinGecko top-N by market cap
+    timeout: 8.0                          # seconds per metadata request
+    retry_seconds: 600                    # back off after a failed download
+    dexscreener: true                     # fallback for tickers CoinGecko lacks
+    mirror: true                          # copy each logo onto this node
+    mirror_limit: 500                     # pictures per mirror run
+    mirror_max_bytes: 2000000             # refuse anything larger
+
+support:
+  email: support@onenesstech.ca            # shown in the admin/wallet settings
+
+# Per-transaction privacy (protocol oneness-tor/privacy/1). The wallet asks
+# Public or Anonymous before EVERY send: public writes its address on chain,
+# anonymous writes the label below instead. Nothing expires and nothing is
+# sealed — the only address a sender can hide is its own; the receiver always
+# stays on the record.
+privacy:
+  default_mode: public                     # used when an API call omits "privacy"
+  anonymous_label: Tor-Anonymous-onion     # the name an anonymous sender shows as
+
+ollama:
+  base_url: http://127.0.0.1:11434         # ignored when OLLAMA_HOST is set
+  model: qwen2.5:7b-instruct              # default model for every AI surface
+  models:                                 # per-surface override ("" = use model)
+    brain: ""                             # blockchain interface / command deck
+    nft: ""                               # AI-NFT Studio (mint + chat)
+    web_builder: ""                       # DarkWeb App Builder (/workbench)
+    rust_builder: ""                      # Rust Program Builder (/workbench)
+  # the one start command (python scripts/start.py) installs + serves Ollama
+  # when it is missing - same command locally, on Render and in the container
+  auto_install: true                       # env: ONENESS_OLLAMA_AUTO_INSTALL
+  pull_on_start: false                     # env: ONENESS_OLLAMA_PULL (a 7B model is GBs)
+  start_timeout: 45.0                     # how long to wait for /api/version
+
+  timeout: 300.0                           # whole-file generation needs room
+  max_tool_rounds: 4
+  landing_models: []
+
+tor:
+  control_port: 9051
+  socks_port: 9050
+  hostname: 127.0.0.1
+  binary: tor
+  publish_node: false                     # ADD_ONION the whole API at boot
+  node_label: node                        # the recorded row for this node
+  # Start Tor ourselves when the control port is closed (ONENESS_TOR_AUTOSTART).
+  # The start command writes data/tor/torrc (SOCKS + ControlPort + cookie auth) and
+  # spawns `tor -f <that torrc>` detached — the only way a Render/Docker container
+  # publishes an onion without anybody shelling in. `apt-get install tor` is in the
+  # Dockerfile; a local Windows/macOS run can drop the Tor expert bundle in
+  # data/tor/runtime/tor instead.
+  auto_start: false
+  # No tor package at all (a service created from a Python runtime, a bare VM)?
+  # The start command can install it with the host's package manager before
+  # starting it — apt-get / apk / dnf / yum / brew — and prints every command it
+  # ran. Windows has no such path: unpack the Tor expert bundle into
+  # data/tor/runtime/tor instead (ONENESS_TOR_AUTO_INSTALL).
+  auto_install: false
+  torrc: ""                               # "" = data/tor/torrc
+  start_timeout: 25.0
+  # The base64 ED25519-V3 key of THIS node's onion, so a redeploy re-creates the
+  # same address instead of minting a new one (a Render disk is ephemeral). Read it
+  # from GET /api/tor/key (admin) or `python -m oneness_tor.cli key` after the first
+  # publish — or mint it before the first deploy with
+  # `python -m oneness_tor.cli keygen`, which prints the blob *and* the .onion it
+  # owns (the key is the identity, so no daemon is needed to know the address).
+  onion_key: ""
+
+# One proposer, verified replicas. The origin exports a snapshot; a replica
+# re-hashes it and imports it (no multi-proposer gossip yet).
+sync:
+  role: origin                            # origin | replica (ONENESS_NODE_ROLE)
+  origin_url: ""                          # replica: https://...onrender.com or http://<id>.onion
+  origin_token: ""                        # replica: origin's chain admin token ("" = api.admin_token)
+  auto: true                              # pull on a timer (ONENESS_SYNC_AUTO)
+  interval_seconds: 60                    # ONENESS_SYNC_INTERVAL
+  timeout: 30.0                           # per request, seconds
+  proxy: ""                               # socks5://127.0.0.1:9050 for an .onion origin
+  # Push leg (origin only): export the verified snapshot, keep a copy in
+  # data/snapshots, then POST it to every target, which re-hashes it before
+  # importing (POST /api/chain/sync/accept). This is the automation that keeps
+  # node 2 and node 3 current; the timer is ONENESS_SYNC_PUSH_INTERVAL.
+  push:
+    enabled: true                         # ONENESS_SYNC_PUSH=0 turns the timer off
+    interval_seconds: 0                   # 0 = follow sync.interval_seconds
+    save: true                            # write data/snapshots/latest.json
+    keep: 5                               # snapshot files kept on disk
+    targets:
+      # a Render replica, a node 2, a node 3, an onion node — one row each.
+      # "url" or "url|token" works too; the token is that replica's admin token
+      # (empty = this node's token, which a seeded replica already accepts).
+      # - url: https://oneness-tor-node2.onrender.com
+      #   token: ""
+      #   label: node 2
+      # - url: https://oneness-tor-node3.onrender.com
+      #   label: node 3
+      # - url: http://<id>.onion
+      #   label: onion node
+
+pricing:
+  # TOR launch price in USD — the anchor every platform quotes against.
+  tor_usd: 3.60
+  overrides:
+    # banner advertising is sold by the week; the screener API key is a
+    # one-off purchase good for 30 days
+    meme_banner_7d: 50
+    api_key: 100
+  # Every service is also repriced from the admin panel (/admin → Service fees,
+  # POST /api/admin/fees): the panel writes data/admin/pricing.json and that value
+  # wins over this block. LOCKED Section 8 rows (contract_create, mint, transfer)
+  # can only be moved there with an explicit confirm_locked: true.
+
+# ---------------------------------------------------------------- OpenRouter
+# The AI-NFT ChatBox on TOR Onion Swap, TOR-Screener, DarkWeb Crypto, TOR Pump
+# and the Solarix engine calls this node (POST /api/ai/chat), never OpenRouter
+# directly. Free models only; the key never reaches a browser.
+openrouter:
+  base_url: https://openrouter.ai/api/v1
+  api_key: ""                              # env: ONENESS_OPENROUTER_API_KEY
+  model: openrouter/free
+  timeout: 90
+  referer: https://www.onenesstorblockchain.com
+  title: TOR AI-NFT Wallet
+
+meme:
+  page_path: /pages/meme.html
+  promo_codes: ""
+
+nft:
+  page_path: /pages/ai-nft.html
+  max_metadata_bytes: 262144
+  solana_rpc: https://api.mainnet-beta.solana.com   # ONENESS_SOLANA_RPC wins
+  timeout: 10.0
+  ipfs_gateways:
+    - https://ipfs.io/ipfs/
+    - https://cloudflare-ipfs.com/ipfs/

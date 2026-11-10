@@ -1,0 +1,1198 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel" id="account-panel">
+  <div class="row">
+    <div>
+      <div class="eyebrow">username + password · scrypt hashed · 2-hour session</div>
+      <h2 style="margin:0">Admin account</h2>
+    </div>
+    <div class="spacer"></div>
+    <span class="badge info" id="account-state">checking…</span>
+    <button class="btn ghost small" id="account-reload">reload</button>
+    <button class="btn danger small" id="account-logout" hidden>sign out</button>
+  </div>
+  <p class="tiny" style="margin:.35rem 0 .2rem">
+    Register once with a username and password; after that registration is closed. The
+    password authorizes every operator route through <code>x-admin-session</code> — no token
+    is ever typed into a page. Chain-level actions (sealing the archive, moving the fee
+    collector) use this node's own token: it is created on first boot in
+    <code>data/admin/chain_token</code> and handed to the ledger before the node starts, so
+    they work from this session with nothing to paste. The field below only pins a
+    <em>different</em> chain token; it is encrypted with your password (AES-GCM), never
+    stored in the clear.
+    Support: <a href="mailto:{{ support_email }}">{{ support_email }}</a>
+  </p>
+
+  <div id="account-register" hidden>
+    <div class="grid g2" style="gap:.6rem">
+      <div class="field"><label for="reg-user">username</label>
+        <input id="reg-user" autocomplete="username" placeholder="operator"></div>
+      <div class="field"><label for="reg-pass">password (8+ characters)</label>
+        <input id="reg-pass" type="password" autocomplete="new-password"></div>
+      <div class="field"><label for="reg-pass2">confirm password</label>
+        <input id="reg-pass2" type="password" autocomplete="new-password"></div>
+      <div class="field"><label for="reg-token">chain admin token (optional · pins your own instead of this node's)</label>
+        <input id="reg-token" type="password" autocomplete="off"
+               placeholder="leave empty — the node's own token is used"></div>
+    </div>
+    <button class="btn lime small" id="reg-run" style="margin-top:.6rem">register admin</button>
+  </div>
+
+  <div id="account-login" hidden>
+    <div class="grid g2" style="gap:.6rem">
+      <div class="field"><label for="login-user">username</label>
+        <input id="login-user" autocomplete="username"></div>
+      <div class="field"><label for="login-pass">password</label>
+        <input id="login-pass" type="password" autocomplete="current-password"></div>
+    </div>
+    <button class="btn small" id="login-run" style="margin-top:.6rem">sign in</button>
+  </div>
+
+  <div id="account-signed" hidden>
+    <div id="account-view" style="margin-top:.6rem"></div>
+    <div id="admin-wallet" class="tiny muted" style="margin-top:.5rem">—</div>
+    <h3 style="margin:.9rem 0 .4rem">Settings</h3>
+    <div class="grid g2" style="gap:.6rem">
+      <div>
+        <div class="field"><label for="set-user-pass">password</label>
+          <input id="set-user-pass" type="password" autocomplete="current-password"></div>
+        <div class="field"><label for="set-user-new">new username</label>
+          <input id="set-user-new" placeholder="operator-2"></div>
+        <button class="btn ghost small" id="set-username">change username</button>
+      </div>
+      <div>
+        <div class="field"><label for="set-pass-old">current password</label>
+          <input id="set-pass-old" type="password" autocomplete="current-password"></div>
+        <div class="field"><label for="set-pass-new">new password (8+)</label>
+          <input id="set-pass-new" type="password" autocomplete="new-password"></div>
+        <button class="btn ghost small" id="set-password">change password</button>
+      </div>
+      <div>
+        <div class="field"><label>API key</label>
+          <p class="tiny" id="set-key-hint">not rotated yet</p></div>
+        <button class="btn ghost small" id="set-key">rotate API key</button>
+      </div>
+      <div>
+        <div class="field"><label>admin wallet / fee collector</label>
+          <p class="tiny" id="set-wallet-hint">—</p></div>
+        <button class="btn ghost small" id="set-wallet">generate new admin wallet</button>
+      </div>
+      <div>
+        <div class="field"><label>token logos</label>
+          <p class="tiny" id="set-images-hint" style="margin:.25rem 0 0">
+            reading the metadata cache…</p></div>
+        <button class="btn ghost small" id="set-images">refresh logos</button>
+        <button class="btn ghost small" id="set-images-mirror">mirror logos</button>
+      </div>
+
+    </div>
+    <h3 style="margin:1rem 0 .4rem">Delete admin account</h3>
+    <p class="tiny" style="margin:0 0 .4rem">
+      Deletes the account and re-enables registration. The wallet file is kept so funds are
+      never destroyed.
+    </p>
+    <div class="row">
+      <input id="del-pass" type="password" placeholder="password" style="max-width:240px">
+      <button class="btn danger small" id="del-run">delete admin account</button>
+    </div>
+  </div>
+  <div id="account-out" style="margin-top:.7rem"></div>
+</section>
+
+<section class="grid g2">
+  <div class="panel">
+    <div class="row">
+      <div>
+        <div class="eyebrow">chain core · peers · catch-up</div>
+        <h2 style="margin:0">Node synchronization</h2>
+      </div>
+      <div class="spacer"></div>
+      <button class="btn ghost small" id="sync-onion">publish onion</button>
+      <button class="btn ghost small" id="tor-start">start tor</button>
+      <button class="btn small" id="sync-pull">pull from origin</button>
+      <button class="btn ghost small" id="sync-push">push snapshot</button>
+      <button class="btn ghost small" id="sync-audit">audit chain</button>
+      <button class="btn ghost small" id="sync-run">refresh</button>
+    </div>
+    <div id="sync" style="margin-top:.7rem">reading the node…</div>
+    <div id="sync-audit-out" style="margin-top:.7rem"></div>
+    <p class="tiny" style="margin-top:.6rem">
+      One proposer, verified replicas: a replica pulls
+      <code>GET /api/chain/sync/snapshot</code>, re-hashes every block and the
+      state root, then imports it with <code>POST /api/admin/sync/import</code>
+      (its own <code>state.json</code> + <code>blocks.jsonl</code> are replaced
+      atomically). Nothing is reported green unless the hashes agree.
+    </p>
+  </div>
+
+  <div class="panel">
+    <div class="row">
+      <div>
+        <div class="eyebrow">supply · founder · head</div>
+        <h2 style="margin:0">Integrity check</h2>
+      </div>
+      <div class="spacer"></div>
+      <button class="btn ghost small" id="verify-run">verify now</button>
+    </div>
+    <div id="verify" style="margin-top:.7rem">press verify…</div>
+  </div>
+</section>
+<section class="panel">
+  <div class="row">
+    <div>
+      <div class="eyebrow">admin pricing · one table · every surface</div>
+      <h2 style="margin:0">Service fees</h2>
+    </div>
+    <div class="spacer"></div>
+    <button class="btn ghost small" id="fees-reload">reload</button>
+    <button class="btn small" id="fees-save">save prices</button>
+    <button class="btn danger small" id="fees-reset">reset all</button>
+  </div>
+  <div id="fees" style="margin-top:.7rem">reading the fee table…</div>
+  <div id="fees-out" style="margin-top:.6rem"></div>
+  <p class="tiny" style="margin-top:.6rem">
+    Type the price in TOR and press <b>save prices</b>: it is written to
+    <code>data/admin/pricing.json</code> and every page, quote and invoice —
+    <code>GET /api/pricing</code>, <code>/payments</code>, the meme launcher, the
+    AI-NFT studio — reads the same number from <code>core.pricing</code> on the
+    next request, with no restart and no file to edit.
+    LOCKED Section 8 rows (contract create, mint, node transfer) need
+    <b>confirm changes to LOCKED rows</b>; every change is appended to the file's
+    history with the credential that made it. <b>reset all</b> restores the
+    published table.
+  </p>
+</section>
+
+
+
+<section class="panel">
+  <div class="row">
+    <div>
+      <div class="eyebrow">top 100 by market cap · real token_create</div>
+      <h2 style="margin:0">Token bootstrap</h2>
+    </div>
+    <div class="spacer"></div>
+    <button class="btn ghost small" id="boot-plan">plan</button>
+    <button class="btn small" id="boot-run">mint</button>
+  </div>
+  <div class="row" style="margin-top:.55rem">
+    <div class="field"><label for="boot-limit">limit</label>
+      <input id="boot-limit" value="100" inputmode="numeric"></div>
+    <div class="field"><label for="boot-supply">supply each</label>
+      <input id="boot-supply" value="1000000" inputmode="numeric"></div>
+    <div class="field"><label for="boot-wallet">signing wallet</label>
+      <input id="boot-wallet" value="founder"></div>
+  </div>
+  <div id="boot-out" style="margin-top:.7rem"></div>
+  <p class="tiny" style="margin-top:.6rem">
+    Tickers and names come from the cached public metadata (CoinGecko top list by
+    market cap). Existing tickers are skipped, the chain charges 5 TOR per
+    <code>token_create</code>, and every replica shows the result after
+    <code>POST /api/chain/sync/pull</code>.
+  </p>
+</section>
+
+<section class="panel">
+  <div class="row">
+    <div>
+      <div class="eyebrow">120 assets · 120 wallets · one image everywhere</div>
+      <h2 style="margin:0">Token fleet</h2>
+    </div>
+    <div class="spacer"></div>
+    <button class="btn ghost small" id="fleet-plan">plan</button>
+    <button class="btn ghost small" id="fleet-feed-refresh">refresh market data</button>
+    <button class="btn small" id="fleet-run">mint</button>
+  </div>
+  <div class="row" style="margin-top:.55rem">
+    <div class="field"><label for="fleet-majors">top assets</label>
+      <input id="fleet-majors" value="100" inputmode="numeric"></div>
+    <div class="field"><label for="fleet-memes">solana memecoins</label>
+      <input id="fleet-memes" value="20" inputmode="numeric"></div>
+    <div class="field"><label for="fleet-fund">TOR per wallet</label>
+      <input id="fleet-fund" value="6" inputmode="numeric"></div>
+  </div>
+  <p class="tiny" id="fleet-feed" style="margin:.5rem 0 0">reading the market data…</p>
+  <div id="fleet-out" style="margin-top:.7rem">loading the fleet…</div>
+  <p class="tiny" style="margin-top:.6rem">
+    The top 100 by market cap plus the top 20 Solana memecoins, fetched from
+    key-less providers with two fallbacks each (CoinGecko → CoinPaprika →
+    CoinLore; CoinGecko’s <code>solana-meme-coins</code> → GeckoTerminal →
+    DexScreener). Each asset gets its own fresh Ed25519 wallet, funded from the
+    founder, and one <code>token_create</code> with the provider’s total supply
+    and its image — the same URL this table, the token table and the launcher
+    draw. Writes <code>data/metadata/token-fleet.json</code> and
+    <code>docs/TOKEN_FLEET.md</code>; a ticker that already exists is skipped,
+    never re-minted.
+  </p>
+</section>
+
+<section class="panel">
+  <div class="row">
+    <div>
+      <div class="eyebrow">one model per surface · installed only</div>
+      <h2 style="margin:0">AI models</h2>
+    </div>
+    <div class="spacer"></div>
+    <button class="btn ghost small" id="routing-run">reload models</button>
+  </div>
+  <p class="tiny" style="margin:.35rem 0 .2rem">
+    Every Ollama model on this device, and which one each surface uses. Saving writes an
+    override for this node (<code>data/ollama_routing.json</code>); the model must already be
+    installed, so the dropdown can never store a name that would fail later. Empty =
+    back to <code>config.yaml</code> / <code>ollama.model</code>.
+  </p>
+  <div id="routing" style="margin-top:.6rem">loading models…</div>
+  <div class="row" style="margin-top:.6rem">
+    <span class="tiny muted" id="routing-status"></span>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="row">
+    <div>
+      <div class="eyebrow">per-transaction privacy · nothing expires</div>
+      <h2 style="margin:0">Privacy</h2>
+    </div>
+    <div class="spacer"></div>
+    <a class="btn ghost small" href="/api/privacy" target="_blank" rel="noopener">read the rule</a>
+  </div>
+  <div id="policy" style="margin-top:.7rem">reading /api/privacy…</div>
+  <p class="tiny" style="margin-top:.6rem">
+    The 30-day window is gone: the ledger keeps every record forever and seals
+    nothing. The sending wallet chooses <b>public</b> (its address is on chain) or
+    <b>anonymous</b> (the record shows <code>{{ privacy_label }}</code>) before
+    every send. Only the sender's own address is ever hidden — the receiver always
+    stays on the record. The token table
+    (<code>GET /api/tokens/public</code>) and the public balance sheet
+    (<code>/api/public/balances</code>, <code>/api/public/ledger</code>,
+    <code>/api/public/totals</code>) are public ledger data and stay readable
+    forever. Reading is public; spending still needs the owner's signature
+    (<code>POST /api/wallets/&lt;name&gt;/challenge</code> →
+    <code>/session</code>).
+  </p>
+</section>
+
+<section class="grid g2">
+  <div class="panel">
+    <h2><span class="dot"></span>Recent chain events</h2>
+    <div class="row" style="margin-bottom:.5rem">
+      <div class="field" style="max-width:120px">
+        <label for="event-limit">limit</label>
+        <input id="event-limit" type="number" min="1" max="200" value="20">
+      </div>
+      <button class="btn ghost small" id="events-run" style="align-self:flex-end">load</button>
+    </div>
+    <div id="events">nothing loaded yet</div>
+  </div>
+
+  <div class="panel">
+    <h2><span class="dot"></span>Privacy rule</h2>
+    <p class="tiny" style="margin-top:0">
+      Nothing is sealed and nothing expires. This is the exact document the wallet
+      and every client reads before choosing public or anonymous for a send.
+    </p>
+    <div id="archive-out" class="console" style="margin-top:.6rem;max-height:260px">—</div>
+  </div>
+</section>
+
+<section class="grid g2">
+  <div class="panel">
+    <h2><span class="dot"></span>Contract deploy rights</h2>
+    <p class="tiny" style="margin-top:0">
+      Only authorized nodes may deploy Rust contracts (5 TOR each). The token is
+      never shown — only its fingerprint.
+    </p>
+    <div id="nodes">loading…</div>
+  </div>
+
+  <div class="panel">
+    <h2><span class="dot"></span>Submit a signed transaction</h2>
+    <p class="tiny" style="margin-top:0">
+      Raw passthrough to <code>POST /api/chain/tx</code> — the node validates the
+      signature, nonce and fee. Sign one on the wallet page first.
+    </p>
+    <textarea id="tx-body" style="min-height:110px"
+      placeholder='{"txid": "…", "kind": "transfer", "to": "TOR1…onion", "amount": 1, "nonce": 4, "sig": "…"}'></textarea>
+    <div class="row" style="margin-top:.5rem">
+      <button class="btn small" id="tx-run">broadcast</button>
+      <span class="tiny muted" id="tx-status"></span>
+    </div>
+    <div id="tx-out" class="console" style="margin-top:.5rem;max-height:200px">—</div>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="row">
+    <h2 style="margin:0"><span class="dot"></span>Endpoint coverage</h2>
+    <div class="spacer"></div>
+    <a class="btn ghost small" href="/docs">open live docs</a>
+  </div>
+  <div id="coverage" style="margin-top:.6rem">loading…</div>
+</section>
+
+<section class="panel">
+  <h2><span class="dot"></span>Live calls</h2>
+  <div id="api-log" class="log" style="max-height:190px"></div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const $ = id => document.getElementById(id);
+let accountStatus = null;
+
+function accountShow(which) {
+  ["account-register", "account-login", "account-signed"].forEach(id => {
+    $(id).hidden = id !== which;
+  });
+}
+
+function renderAdminStatus(status) {
+  accountStatus = status;
+  $("account-view").innerHTML = OT.kv([
+    ["username", `<b>${OT.esc(status.username || "—")}</b>`],
+    ["wallet", OT.esc(status.wallet || "not generated")],
+    ["fee collector", OT.esc(status.fee_receiver || "—")],
+    ["chain token bound", status.chain_token_bound ? "yes (encrypted at rest)" : "no"],
+    ["API key", OT.esc(status.api_key_hint || "not rotated")],
+    ["support", `<a href="mailto:${OT.esc(status.support_email)}">${OT.esc(status.support_email)}</a>`],
+  ]);
+  $("set-key-hint").textContent = status.api_key_hint
+    ? `${status.api_key_hint} · rotated ${OT.when(status.api_key_rotated_at)}`
+    : "no platform key rotated yet";
+  $("set-wallet-hint").textContent = status.wallet
+    ? `${status.wallet} · fee collector ${status.fee_receiver || "?"}`
+    : `no admin wallet yet (fee collector ${status.fee_receiver || "?"})`;
+  loadAdminWallet();
+}
+
+async function loadAdminWallet() {
+  const wallet = (accountStatus || {}).wallet;
+  if (!wallet) {
+    $("admin-wallet").textContent = "no admin wallet yet — generate one in Settings";
+    return;
+  }
+  try {
+    const view = await OT.get(`/api/wallets/${encodeURIComponent(wallet)}`);
+    const tickers = Object.keys(view.tokens || {}).length;
+    $("admin-wallet").innerHTML = `<span class="dot-live"></span>
+      <b>${OT.esc(view.name)}</b> · ${OT.fmtTor(view.balance)} TOR
+      <span class="muted">· ${OT.fmtInt(tickers)} token holding(s)</span>
+      <span class="muted">· updated ${new Date().toLocaleTimeString()}</span>`;
+  } catch (problem) {
+
+    $("admin-wallet").innerHTML = `<span class="badge bad">${OT.esc(problem.code)}</span>
+      <span class="tiny">${OT.esc(problem.message)}</span>`;
+  }
+}
+
+async function loadTokenImages() {
+  try {
+    const data = await OT.get("/api/tokens/images");
+    const logos = data.logos || {};
+    $("set-images-hint").className = "tiny";
+    $("set-images-hint").textContent = data.count
+      ? `${OT.fmtInt(data.count)} logo(s) cached · `
+        + `${OT.fmtInt(logos.count)} mirrored on this node`
+        + ` · ${data.source} · fetched ${data.fetched_at || "never"}`
+        + (data.stale ? " · stale" : "")
+      : (data.enabled === false
+          ? "logo metadata is disabled (tokens.images.enabled: false)"
+          : "no logos cached yet — press refresh logos");
+    $("set-images-hint").title = data.last_error || data.note || "";
+  } catch (problem) {
+    $("set-images-hint").textContent = `${problem.code}: ${problem.message}`;
+  }
+}
+
+async function mirrorTokenImages() {
+  $("set-images-hint").textContent = "copying logos onto this node…";
+  try {
+    const data = await OT.post("/api/tokens/images/mirror", {});
+    const failed = (data.failed || []).length;
+    OT.toast(`logos mirrored: ${OT.fmtInt(data.mirrored)} copied · `
+      + `${OT.fmtInt(data.count)} of ${OT.fmtInt(data.total)} now served here`
+      + (failed ? ` · ${OT.fmtInt(failed)} failed` : ""), failed ? "bad" : "ok");
+    await loadTokenImages();
+  } catch (problem) { accountError(problem); }
+}
+
+async function refreshTokenImages() {
+  $("set-images-hint").textContent = "fetching token metadata…";
+  try {
+    const data = await OT.post("/api/tokens/images/refresh", {});
+    const done = (data.images || {});
+    OT.toast(`logos refreshed: ${OT.fmtInt(done.count)} cached`
+      + (done.last_error ? ` (${done.last_error})` : ""), done.count ? "ok" : "bad");
+    await loadTokenImages();
+  } catch (problem) { accountError(problem); }
+}
+
+
+async function loadAccount() {
+  try {
+    const status = await OT.get("/api/admin/account");
+    /* GET /api/admin/account only hands back the private fields (username, the
+       api-key hint) to a credential the node still accepts. Admin sessions live
+       in the API process, so a redeploy, a restart or the 2-hour TTL ends them
+       while this browser keeps the dead token in localStorage. Without this
+       probe the card said "signed in" and every operator button — the fee table
+       included — answered FORBIDDEN for ever. */
+    if (OT.adminSession() && !status.username) {
+      OT.setAdminSession("", "");
+      $("account-out").innerHTML = `<span class="badge warn">session ended</span>
+        <span class="tiny">the node restarted (a deploy does that too) or the
+        2-hour session ran out — sign in again with the admin username and
+        password; no price, ledger or account data was touched.</span>`;
+    }
+    renderAdminStatus(status);
+    $("account-logout").hidden = !OT.adminSession();
+
+    if (OT.adminSession()) {
+      $("account-state").className = "badge ok";
+      $("account-state").textContent = `signed in · ${status.username || ""}`;
+      accountShow("account-signed");
+    } else if (status.registered) {
+      $("account-state").className = "badge info";
+      $("account-state").textContent = "registered — sign in";
+      accountShow("account-login");
+    } else {
+      $("account-state").className = "badge warn";
+      $("account-state").textContent = "no admin account yet";
+      accountShow("account-register");
+    }
+  } catch (problem) {
+    $("account-out").innerHTML =
+      `<span class="badge bad">${OT.esc(problem.code)}</span> <span class="tiny">${OT.esc(problem.message)}</span>`;
+  }
+}
+
+function accountError(problem) {
+  $("account-out").innerHTML = `<span class="badge bad">${OT.esc(problem.code || "ERROR")}</span>
+    <span class="tiny">${OT.esc(problem.message)}</span>`;
+}
+
+function signedIn(data) {
+  OT.setAdminSession(data.session, data.account.username);
+  renderAdminStatus(data.status);
+  accountShow("account-signed");
+  $("account-state").className = "badge ok";
+  $("account-state").textContent = `signed in · ${data.account.username}`;
+  $("account-logout").hidden = false;
+}
+
+async function registerAdmin() {
+  const username = $("reg-user").value.trim();
+  const password = $("reg-pass").value;
+  if (password !== $("reg-pass2").value) {
+    OT.toast("the passwords do not match", "bad");
+    return;
+  }
+  $("account-out").innerHTML = `<span class="spinner"></span> registering…`;
+  try {
+    const body = { username, password };
+    const token = $("reg-token").value.trim();
+    if (token) body.admin_token = token;
+    const data = await OT.post("/api/admin/account/register", body);
+    signedIn(data);
+    $("account-out").innerHTML = `<span class="badge ok">admin registered</span>
+      <p class="tiny">Registration is now closed. Sign in with the username and password.</p>`;
+    $("reg-pass").value = ""; $("reg-pass2").value = ""; $("reg-token").value = "";
+  } catch (problem) {
+    accountError(problem);
+  }
+}
+
+async function loginAdmin() {
+  const username = $("login-user").value.trim();
+  const password = $("login-pass").value;
+  $("account-out").innerHTML = `<span class="spinner"></span> signing in…`;
+  try {
+    const data = await OT.post("/api/admin/account/login", { username, password });
+    signedIn(data);
+    $("account-out").innerHTML = `<span class="badge ok">signed in</span>
+      <span class="tiny">session ${OT.esc(data.header)} · expires ${OT.esc(OT.when(data.expires_at))}</span>`;
+    $("login-pass").value = "";
+  } catch (problem) {
+    accountError(problem);
+  }
+}
+
+async function logoutAdmin() {
+  try { await OT.post("/api/admin/account/logout", {}); } catch (_) { /* gone */ }
+  OT.setAdminSession("", "");
+  $("account-out").innerHTML = `<span class="badge info">signed out</span>`;
+  await loadAccount();
+}
+
+async function changeUsername() {
+  try {
+    const data = await OT.post("/api/admin/account/username", {
+      password: $("set-user-pass").value, username: $("set-user-new").value.trim(),
+    });
+    $("account-out").innerHTML = `<span class="badge ok">username changed</span>
+      <span class="tiny">now ${OT.esc(data.account.username)}</span>`;
+    $("set-user-pass").value = ""; $("set-user-new").value = "";
+    await loadAccount();
+  } catch (problem) { accountError(problem); }
+}
+
+async function changePassword() {
+  try {
+    await OT.post("/api/admin/account/password", {
+      current_password: $("set-pass-old").value, new_password: $("set-pass-new").value,
+    });
+    OT.setAdminSession("", "");
+    $("account-out").innerHTML = `<span class="badge ok">password changed</span>
+      <span class="tiny">every session was closed — sign in again</span>`;
+    $("set-pass-old").value = ""; $("set-pass-new").value = "";
+    await loadAccount();
+  } catch (problem) { accountError(problem); }
+}
+
+async function rotateApiKey() {
+  if (!confirm("Rotate the platform API key? The previous key stops working immediately.")) return;
+  try {
+    const data = await OT.post("/api/admin/account/api-key", {});
+    $("account-out").innerHTML = `<span class="badge ok">API key rotated — copy it now</span>
+      <pre class="code">${OT.esc(data.api_key)}</pre>
+      <p class="tiny">Send it as <code>${OT.esc(data.header)}</code>. It is only shown once.</p>`;
+    await loadAccount();
+  } catch (problem) { accountError(problem); }
+}
+
+async function newAdminWallet() {
+  if (!confirm("Generate a new admin wallet? The account's previous wallet is deleted and the new one becomes the fee collector.")) return;
+  $("account-out").innerHTML = `<span class="spinner"></span> generating a wallet and moving the fee collector…`;
+  try {
+    const data = await OT.post("/api/admin/account/wallet", {});
+    const key = (data.one_time || {}).private_key_base58 || "";
+    $("account-out").innerHTML = `<span class="badge ok">new admin wallet is the fee collector</span>` +
+      OT.kv([
+        ["wallet", OT.esc(data.wallet)],
+        ["address", `<span class="mono">${OT.esc(data.address)}</span>`],
+        ["fee collector", `<span class="mono">${OT.esc(data.fee_receiver)}</span>`],
+        ["previous wallet", `${OT.esc(data.previous_wallet || "none")} · deleted=${OT.esc(data.previous_wallet_deleted)}`],
+      ]) + `<p class="tiny" style="margin-top:.5rem">private key — copy it now, shown once:</p>
+        <pre class="code">${OT.esc(key || "(not exported)")}</pre>
+        <button class="btn small" data-copy="${OT.esc(key)}">copy private key</button>`;
+    await loadAccount();
+  } catch (problem) { accountError(problem); }
+}
+
+async function deleteAdmin() {
+  if (!confirm("Delete the admin account? Registration will be enabled again.")) return;
+  try {
+    const data = await OT.call("/api/admin/account", {
+      method: "DELETE", body: { password: $("del-pass").value } });
+    OT.setAdminSession("", "");
+    $("del-pass").value = "";
+    $("account-out").innerHTML = `<span class="badge warn">admin account deleted</span>
+      <p class="tiny">${OT.esc(data.note || "")}</p>`;
+    await loadAccount();
+  } catch (problem) { accountError(problem); }
+}
+
+document.addEventListener("click", event => {
+  const button = event.target.closest("[data-copy]");
+  if (button) OT.copy(button.dataset.copy);
+});
+
+
+/* A FORBIDDEN that asks for an admin credential means this page holds no
+   credential the node accepts (never signed in here, or the session died with a
+   restart). Say where to fix it instead of only repeating the node's wording:
+   the fee buttons need the admin session, never a pasted token. */
+function needsSignIn(problem) {
+  return Number(problem.status) === 403 && !OT.adminSession() &&
+    String(problem.message || "").includes("admin credential required");
+}
+
+function fail(id, problem) {
+  $(id).innerHTML = `<span class="badge bad">${OT.esc(problem.code || "ERROR")}</span> ` +
+    `<span class="tiny">${OT.esc(problem.message)}</span>` +
+    (needsSignIn(problem)
+      ? `<div class="tiny" style="margin-top:.3rem">
+           <a href="#account-panel">sign in with the admin username + password</a>
+           — that authorizes this panel; no token is ever pasted into a page.</div>`
+      : "");
+}
+
+async function loadRouting() {
+  $("routing-status").textContent = "";
+  try {
+    const data = await OT.get("/api/ollama/routing");
+    const models = data.models || [];
+    const options = row => models.map(model =>
+      `<option value="${OT.esc(model.name)}"${model.name === row.model ? " selected" : ""}>` +
+      `${OT.esc(model.name)}${model.size_gb ? ` · ${model.size_gb}GB` : ""}` +
+      `${model.cloud ? " · cloud" : ""}</option>`).join("");
+    $("routing").innerHTML = (data.purposes || []).map(row => `
+      <div class="row" style="margin:.45rem 0;gap:.55rem;align-items:flex-start">
+        <div style="flex:1;min-width:190px">
+          <b style="font-size:.82rem">${OT.esc(row.label)}</b>
+          <div class="tiny muted">${OT.esc(row.summary)}</div>
+          <div class="tiny muted">surface <span class="mono">${OT.esc(row.id)}</span> · source ${OT.esc(row.source)}</div>
+        </div>
+        <select data-purpose="${OT.esc(row.id)}" style="max-width:240px">
+          <option value="">config default (${OT.esc(data.default_model)})</option>
+          ${options(row)}
+        </select>
+        <span class="badge ${row.installed ? "ok" : "warn"}">${row.installed ? "installed" : "not on disk"}</span>
+        <button class="btn small" data-save="${OT.esc(row.id)}">save</button>
+      </div>`).join("") || `<div class="empty">no AI surfaces reported</div>`;
+    $("routing-status").innerHTML =
+      `<span class="badge info">${OT.fmtInt(models.length)} model(s) on this device</span> ` +
+      (data.error ? `<span class="tiny">Ollama: ${OT.esc(data.error)}</span>` : "");
+  } catch (problem) {
+    $("routing").innerHTML = `<span class="badge bad">${OT.esc(problem.code)}</span> ` +
+      `<span class="tiny">${OT.esc(problem.message)}</span>`;
+  }
+}
+
+$("routing").addEventListener("click", async event => {
+  const button = event.target.closest("[data-save]");
+  if (!button) return;
+  const purpose = button.dataset.save;
+  const select = document.querySelector(`select[data-purpose="${purpose}"]`);
+  button.disabled = true;
+  try {
+    const data = await OT.post("/api/ollama/routing", { purpose, model: select.value });
+    OT.toast(`${purpose} → ${data.model}` + (data.cleared ? " (config default)" : ""), "ok");
+    await loadRouting();
+  } catch (problem) {
+    $("routing-status").innerHTML = `<span class="badge bad">${OT.esc(problem.code)}</span> ` +
+      `<span class="tiny">${OT.esc(problem.message)}</span>`;
+  } finally {
+    button.disabled = false;
+  }
+});
+
+$("routing-run").addEventListener("click", loadRouting);
+
+async function loadAudit() {
+  $("sync-audit-out").innerHTML =
+    `<span class="spinner"></span> re-hashing every block the node serves…`;
+  try {
+    const data = await OT.get("/api/chain/sync/audit");
+    const tone = data.verdict === "in-sync" ? "ok"
+      : (data.verdict === "drift" ? "bad" : "warn");
+    $("sync-audit-out").innerHTML =
+      `<div class="row"><span class="badge ${tone}">${OT.esc(data.verdict)}</span>` +
+      `<span class="tiny muted">${OT.fmtInt(data.blocks_checked)} block(s) re-hashed · ` +
+      `height ${OT.fmtInt(data.height)} · ${OT.esc(OT.when(data.checked_at))}</span></div>` +
+      (data.errors && data.errors.length
+        ? `<div class="console" style="margin-top:.4rem">${data.errors.map(OT.esc).join("\n")}</div>`
+        : `<p class="tiny muted" style="margin:.4rem 0 0">${OT.esc(data.note || "")}</p>`) +
+      OT.table(data.peers || [], [
+        { label: "peer", cls: "mono", render: row => OT.esc(row.url) },
+        { label: "reachable", render: row => OT.badge(row.reachable ? "active" : "offline") },
+        { label: "height", cls: "mono", render: row => OT.esc(row.height ?? "—") },
+        { label: "ahead by", cls: "mono", render: row => OT.esc(row.ahead_by ?? "—") },
+      ], "no peers configured in chain.peers — single-proposer mode");
+  } catch (problem) {
+    fail("sync-audit-out", problem);
+  }
+}
+
+async function loadSync() {
+  try {
+    const data = await OT.get("/api/chain/sync");
+    const peers = data.peers || [];
+    const replication = data.replication || {};
+    const last = replication.last_pull || {};
+    const onion = (data.endpoints || {}).onion;
+    $("sync").innerHTML = OT.kv([
+      ["mode", `<span class="badge info">${OT.esc(data.mode)}</span>`],
+      ["role", `<span class="badge ${data.role === "origin" ? "ok" : "violet"}">${OT.esc(data.role)}</span>`],
+      ["origin", data.origin
+        ? `<span class="mono">${OT.esc(data.origin)}</span>`
+        : `<span class="badge warn">none — this node proposes</span>`],
+      ["local height", `<b>${OT.fmtInt(data.local_height)}</b>`],
+      ["head hash", `<span class="mono">${OT.esc(OT.short(data.head_hash, 18))}</span>`],
+      ["genesis hash", `<span class="mono">${OT.esc(OT.short(data.genesis_hash, 18))}</span>`],
+      ["total supply", `${OT.fmtTor(data.total_supply)} TOR`],
+      ["onion", onion
+        ? `<a class="mono" href="${OT.esc(onion)}/docs" target="_blank" rel="noopener">${OT.esc(onion)}</a>`
+        : `<span class="badge">not published</span>`],
+      ["last pull", last.at
+        ? `${OT.badge(last.ok ? "ok" : "failed")} <span class="tiny muted">${OT.esc(last.reason || "")}</span>`
+        : `<span class="tiny muted">never</span>`],
+      ["peers", peers.length ? `${peers.length}` : `<span class="badge warn">none configured</span>`],
+      ["snapshot push", (() => {
+        const push = replication.push || {};
+        const last = push.last_push || {};
+        const targets = (push.targets || []).length;
+        return `${push.enabled ? OT.badge("on") : OT.badge("off")} ` +
+          `<span class="tiny muted">${targets} target(s) · every ` +
+          `${OT.esc(push.interval_seconds)}s · ` +
+          `${OT.esc(last.reason || "never pushed")}</span>`;
+      })()],
+      ["snapshot copy", `<span class="mono tiny">${OT.esc((replication.push || {}).save_dir || "—")}</span>`],
+      ["catch-up", `<span class="mono">${OT.esc(data.catch_up.endpoint)}` +
+        `?${OT.esc(data.catch_up.from_param)}=&amp;${OT.esc(data.catch_up.to_param)}=</span>`],
+      ["submit", `<span class="mono">${OT.esc(data.submit_endpoint)}</span>`],
+    ]) + `<p class="tiny" style="margin-top:.5rem">${OT.esc(data.note)}</p>` +
+      OT.table(peers, [
+        { label: "peer", cls: "mono", render: row => OT.esc(row.url || row.name || "—") },
+        { label: "reachable", render: row => OT.badge(row.reachable ? "active" : "offline") },
+      ], "no peers in config.yaml → chain.peers");
+  } catch (problem) {
+    fail("sync", problem);
+  }
+}
+
+/* ------------------------------------------------------------- service fees */
+async function loadFees() {
+  $("fees").innerHTML = `<span class="spinner"></span> reading the fee table…`;
+  try {
+    const data = await OT.get("/api/admin/fees");
+    const rows = data.rows || [];
+    $("fees").innerHTML = OT.table(rows, [
+      { label: "service", render: row => OT.esc(row.label) +
+          (row.locked ? ` <span class="badge warn">LOCKED</span>` : "") },
+      { label: "code", cls: "mono", render: row => OT.esc(row.code) },
+      { label: "price (TOR)", render: row =>
+          `<input data-fee="${OT.esc(row.code)}" value="${OT.esc(row.tor)}" ` +
+          `inputmode="decimal" style="max-width:120px">` },
+      { label: "published", cls: "mono", render: row => OT.esc(row.default_tor) },
+      { label: "source", render: row => OT.badge(row.source === "default" ? "ok" : "info") +
+          ` <span class="tiny muted">${OT.esc(row.source)}</span>` +
+          (row.set_at ? `<div class="tiny muted">${OT.esc(OT.when(row.set_at))}</div>` : "") },
+      { label: "", render: row => row.overridden
+          ? `<button class="btn ghost small" data-fee-reset="${OT.esc(row.code)}">reset</button>`
+          : "" },
+    ], "the fee table is empty") +
+      `<label class="tiny" style="display:flex;gap:.45rem;align-items:center;margin-top:.6rem">` +
+      `<input type="checkbox" id="fee-locked"> confirm changes to LOCKED rows` +
+      `(contract create, mint, transfer)</label>` +
+      (data.history && data.history.length
+        ? `<p class="tiny muted" style="margin:.6rem 0 .2rem">last changes</p>` +
+          OT.table(data.history.slice().reverse(), [
+            { label: "when", cls: "mono", render: row => OT.esc(OT.when(row.at)) },
+            { label: "code", cls: "mono", render: row => OT.esc(row.code) },
+            { label: "from → to", cls: "mono", render: row =>
+                `${OT.esc(row.from)} → ${OT.esc(row.to ?? "reset")}` },
+            { label: "by", render: row => OT.esc(row.by) },
+          ], "")
+        : "");
+    $("fees").querySelectorAll("[data-fee-reset]").forEach(button => {
+      button.addEventListener("click", () => resetFee(button.dataset.feeReset));
+    });
+  } catch (problem) {
+    fail("fees", problem);
+  }
+}
+
+async function saveFees() {
+  const prices = {};
+  $("fees").querySelectorAll("[data-fee]").forEach(input => {
+    const value = Number(input.value);
+    if (Number.isFinite(value) && value > 0) prices[input.dataset.fee] = value;
+  });
+  const codes = Object.keys(prices);
+  if (!codes.length) {
+    $("fees-out").innerHTML =
+      `<span class="badge warn">nothing to save</span> ` +
+      `<span class="tiny">every price must be a positive number of TOR</span>`;
+    return;
+  }
+  const locked = $("fee-locked") ? $("fee-locked").checked : false;
+  if (!window.confirm(`Save ${codes.length} price(s)? The fee router charges the ` +
+      `new values on the very next request.`)) return;
+  $("fees-out").innerHTML = `<span class="spinner"></span> saving ${codes.length} price(s)…`;
+  try {
+    const data = await OT.post("/api/admin/fees", { prices, confirm_locked: locked });
+    $("fees-out").innerHTML =
+      `<span class="badge ok">saved</span> <span class="tiny muted">` +
+      OT.esc((data.applied_codes || []).join(", ")) + `</span>`;
+    await loadFees();
+  } catch (problem) {
+    fail("fees-out", problem);
+  }
+}
+
+async function resetFee(code) {
+  if (!window.confirm(`Reset ${code} to the published price?`)) return;
+  $("fees-out").innerHTML = `<span class="spinner"></span> resetting ${OT.esc(code)}…`;
+  try {
+    const data = await OT.del(`/api/admin/fees/${encodeURIComponent(code)}`);
+    $("fees-out").innerHTML = `<span class="badge ok">reset</span> ` +
+      `<span class="tiny muted">${OT.esc(data.message || code)}</span>`;
+    await loadFees();
+  } catch (problem) {
+    fail("fees-out", problem);
+  }
+}
+
+async function resetAllFees() {
+  if (!window.confirm("Reset every service to its published price?")) return;
+  $("fees-out").innerHTML = `<span class="spinner"></span> resetting the table…`;
+  try {
+    const data = await OT.del("/api/admin/fees");
+    $("fees-out").innerHTML = `<span class="badge ok">table reset</span> ` +
+      `<span class="tiny muted">${OT.esc(data.count)} row(s) at their published price</span>`;
+    await loadFees();
+  } catch (problem) {
+    fail("fees-out", problem);
+  }
+}
+
+async function loadVerify() {
+  $("verify").innerHTML = `<span class="spinner"></span> checking…`;
+  try {
+    const data = await OT.get("/api/chain/verify");
+    $("verify").innerHTML = OT.kv([
+      ["chain", `<span class="mono">${OT.esc(data.chain_id)}</span>`],
+      ["height", `<b>${OT.fmtInt(data.height)}</b>`],
+      ["total supply", `${OT.fmtTor(data.total_supply_micro || data.total_supply)} TOR`],
+      ["founder", `<span class="mono">${OT.esc(data.founder)}</span>`],
+      ["founder balance", `${OT.fmtTor(data.founder_balance_micro)} TOR`],
+      ["fee receiver", `<span class="mono">${OT.esc(data.fee_receiver)}</span>`],
+      ["checked", OT.esc(OT.when(data.checked_at))],
+    ]);
+  } catch (problem) {
+    fail("verify", problem);
+  }
+}
+
+async function loadEvents() {
+  const limit = Number($("event-limit").value) || 20;
+  $("events").innerHTML = `<span class="spinner"></span> loading…`;
+  try {
+    const data = await OT.get(`/api/chain/events?limit=${limit}`);
+    const rows = data.records || data.events || [];
+    $("events").innerHTML = OT.table(rows, [
+      { label: "height", cls: "mono", render: row => OT.esc(row.height ?? "—") },
+      { label: "kind", render: row => `<span class="badge violet">${OT.esc(row.kind || "—")}</span>` },
+      { label: "amount", cls: "mono", render: row => row.amount ? `${OT.fmtTor(row.amount)} TOR` : "—" },
+      { label: "txid", cls: "mono", render: row => OT.esc(OT.short(row.txid, 10)) },
+      { label: "when", render: row => OT.esc(OT.when(row.timestamp || row.created_at)) },
+    ], "the node reported no events");
+  } catch (problem) {
+    fail("events", problem);
+  }
+}
+
+async function loadNodes() {
+  try {
+    const data = await OT.get("/api/contracts/nodes");
+    const rows = data.nodes || [];
+    $("nodes").innerHTML = OT.table(rows, [
+      { label: "node", render: row => `<b>${OT.esc(row.name)}</b>` },
+      { label: "address", cls: "mono", render: row => OT.esc(row.address || "—") },
+      { label: "authorized", render: row => OT.badge(row.authorized ? "active" : "expired") },
+      { label: "fingerprint", cls: "mono", render: row => OT.esc(row.fingerprint || "—") },
+    ], "no node keys configured");
+  } catch (problem) {
+    fail("nodes", problem);
+  }
+}
+
+async function loadCoverage() {
+  try {
+    const data = await OT.get("/api/docs/endpoints");
+    const counts = {};
+    (data.endpoints || []).forEach(entry => {
+      counts[entry.group] = (counts[entry.group] || 0) + 1;
+    });
+    const rows = Object.keys(counts).sort()
+      .map(group => ({ group: group, count: counts[group] }));
+    $("coverage").innerHTML =
+      `<div class="row"><span class="badge ok">${OT.fmtInt(data.count)} endpoints</span>` +
+      `<span class="badge info">catalog v${OT.esc(data.version)}</span>` +
+      `<span class="tiny muted">every one is callable by the fetch-data tool and listed in the system prompt</span></div>` +
+      OT.table(rows, [
+        { label: "group", render: row => `<span class="mono">${OT.esc(row.group)}</span>` },
+        { label: "endpoints", cls: "mono", render: row => OT.esc(row.count) },
+      ]);
+  } catch (problem) {
+    fail("coverage", problem);
+  }
+}
+
+async function loadPolicy() {
+  try {
+    const data = await OT.get("/api/privacy");
+    $("policy").innerHTML = OT.kv([
+      ["standard", OT.esc(data.standard)],
+      ["modes", (data.modes || []).map(OT.esc).join(" / ")],
+      ["default", OT.esc(data.default_mode)],
+      ["hides", (data.hides || []).map(OT.esc).join(", ")],
+      ["never masked", (data.never_masked || []).map(OT.esc).join(", ")],
+      ["chain field", `${OT.esc(data.chain_field)} = ${OT.esc(data.chain_value_for_anonymous)}`],
+    ]);
+    $("archive-out").innerHTML = `<pre class="code">${OT.esc(JSON.stringify(data, null, 2))}</pre>`;
+  } catch (problem) {
+    $("policy").innerHTML =
+      `<span class="badge bad">${OT.esc(problem.code || "ERROR")}</span> ` +
+      `<span class="tiny">${OT.esc(problem.message)}</span>`;
+  }
+}
+
+$("sync-run").addEventListener("click", loadSync);
+$("account-reload").addEventListener("click", loadAccount);
+$("account-logout").addEventListener("click", logoutAdmin);
+$("reg-run").addEventListener("click", registerAdmin);
+$("login-run").addEventListener("click", loginAdmin);
+$("set-username").addEventListener("click", changeUsername);
+$("set-password").addEventListener("click", changePassword);
+$("set-key").addEventListener("click", rotateApiKey);
+$("set-wallet").addEventListener("click", newAdminWallet);
+$("set-images").addEventListener("click", refreshTokenImages);
+$("set-images-mirror").addEventListener("click", mirrorTokenImages);
+$("del-run").addEventListener("click", deleteAdmin);
+$("sync-audit").addEventListener("click", loadAudit);
+
+$("sync-onion").addEventListener("click", async () => {
+  $("sync-audit-out").innerHTML =
+    `<span class="spinner"></span> asking Tor for ADD_ONION on the API port…`;
+  try {
+    const published = await OT.post("/api/tor/node", {});
+    const status = await OT.get("/api/tor/node");
+    $("sync-audit-out").innerHTML =
+      `<span class="badge ${published.reused ? "warn" : "ok"}">` +
+      `${published.reused ? "already published" : "published"}</span> ` +
+      `<a href="${OT.esc(published.url)}/docs" target="_blank" rel="noopener">` +
+      `${OT.esc(published.url)}</a>\n` +
+      OT.esc(JSON.stringify(status, null, 2));
+    loadSync();
+  } catch (problem) {
+    fail("sync-audit-out", problem);
+  }
+});
+
+$("sync-pull").addEventListener("click", async () => {
+  $("sync-audit-out").innerHTML =
+    `<span class="spinner"></span> pulling the origin snapshot, re-hashing it, importing…`;
+  try {
+    const data = await OT.post("/api/chain/sync/pull", {});
+    $("sync-audit-out").innerHTML =
+      `<span class="badge ${data.imported ? "ok" : "warn"}">${data.imported ? "imported" : "skipped"}</span> ` +
+      `<span class="tiny muted">${OT.esc(data.reason || "")}</span>\n` +
+      OT.esc(JSON.stringify(data, null, 2));
+    loadSync();
+    loadVerify();
+  } catch (problem) {
+    fail("sync-audit-out", problem);
+  }
+});
+
+$("sync-push").addEventListener("click", async () => {
+  $("sync-audit-out").innerHTML =
+    `<span class="spinner"></span> exporting the verified snapshot, saving a copy, ` +
+    `pushing it to every replica…`;
+  try {
+    const data = await OT.post("/api/chain/sync/push", {});
+    $("sync-audit-out").innerHTML =
+      `<span class="badge ${data.failed && data.failed.length ? "warn" : "ok"}">` +
+      `${OT.fmtInt(data.pushed)}/${OT.fmtInt((data.targets || []).length)} target(s)</span> ` +
+      `<span class="tiny muted">height ${OT.fmtInt(data.origin_height)} · ` +
+      `${OT.esc(data.saved || "not saved")}</span>` +
+      OT.table(data.targets || [], [
+        { label: "target", cls: "mono", render: row => OT.esc(row.url) },
+        { label: "ok", render: row => OT.badge(row.ok ? "ok" : "failed") },
+        { label: "imported", render: row => OT.esc(row.imported) },
+        { label: "height", cls: "mono", render: row => OT.esc(row.height ?? "—") },
+        { label: "reason", render: row => OT.esc(row.reason || "—") },
+      ], "no push target configured — set sync.push.targets");
+    loadSync();
+  } catch (problem) {
+    fail("sync-audit-out", problem);
+  }
+});
+
+$("tor-start").addEventListener("click", async () => {
+  $("sync-audit-out").innerHTML =
+    `<span class="spinner"></span> starting the Tor daemon (control + SOCKS)…`;
+  try {
+    const data = await OT.post("/api/tor/start", {});
+    $("sync-audit-out").innerHTML =
+      `<span class="badge ${data.running ? "ok" : "warn"}">` +
+      `${data.started ? "started" : "already up"}</span> ` +
+      `<span class="tiny muted">control ${OT.esc(data.control_port)}` +
+      `${data.pid ? ` · pid ${OT.esc(data.pid)}` : ""}</span>\n` +
+      OT.esc(data.note || "");
+    loadSync();
+  } catch (problem) {
+    fail("sync-audit-out", problem);
+  }
+});
+
+async function runBootstrap(planOnly) {
+  const limit = Number($("boot-limit").value) || 100;
+  const supply = Number($("boot-supply").value) || 1000000;
+  const wallet = $("boot-wallet").value.trim() || "founder";
+  if (!planOnly && !window.confirm(
+      `Mint up to ${limit} tokens at ${supply} supply each? The chain charges ` +
+      `5 TOR per token from "${wallet}" and this cannot be undone.`)) return;
+  $("boot-out").innerHTML =
+    `<span class="spinner"></span> ${planOnly ? "planning" : "minting"} ${limit} token(s)…`;
+  try {
+    const data = await OT.post("/api/tokens/bootstrap",
+      { limit, supply, wallet, dry_run: planOnly });
+    const rows = data.tokens || data.created || [];
+    $("boot-out").innerHTML = OT.kv([
+      ["mode", data.dry_run ? `<span class="badge info">plan only</span>` : `<span class="badge ok">minted</span>`],
+      ["limit", OT.fmtInt(data.limit)],
+      ["supply each", OT.fmtInt(data.supply)],
+      ["to create", OT.fmtInt(data.to_create ?? rows.filter(row => !row.exists).length)],
+      ["already on chain", OT.fmtInt(data.existing ?? data.skipped?.length ?? 0)],
+      ["fee", `${OT.esc(data.fee?.tor_total ?? 0)} TOR (${OT.esc(data.fee?.tor_each ?? 0)} each)`],
+      ["created", OT.fmtInt(data.created_count ?? 0)],
+      ["failed", OT.fmtInt((data.failed || []).length)],
+      ["source", OT.esc((data.source || {}).store || "public metadata cache")],
+    ]) + OT.table(rows.slice(0, 30), [
+      { label: "#", render: row => OT.esc(row.position ?? row.rank ?? "—") },
+      { label: "symbol", cls: "mono", render: row => OT.esc(row.symbol) },
+      { label: "name", render: row => OT.esc(row.name) },
+      { label: "state", render: row => OT.badge(row.txid ? "active" : (row.exists ? "on chain" : "pending")) },
+    ], "nothing to create — refresh the metadata cache first");
+  } catch (problem) {
+    fail("boot-out", problem);
+  }
+}
+
+$("boot-plan").addEventListener("click", () => runBootstrap(true));
+$("boot-run").addEventListener("click", () => runBootstrap(false));
+
+const FLEET_COLUMNS = [
+  { label: "#", render: row => OT.esc(row.position ?? "—") },
+  { label: "logo", render: row => `<img src="${OT.esc(OT.tokenIcon(row).src)}" alt="" width="20" height="20" style="border-radius:50%">` },
+  { label: "token", cls: "mono", render: row => OT.esc(row.symbol) },
+  { label: "name", render: row => OT.esc(row.name) },
+  { label: "supply", render: row => OT.fmtInt(row.supply) },
+  { label: "price", render: row => row.price_usd == null ? "—" : `$${Number(row.price_usd).toPrecision(4)}` },
+  { label: "market cap", render: row => row.market_cap_usd == null ? "—" : `$${OT.fmtInt(Math.round(row.market_cap_usd))}` },
+  { label: "wallet", cls: "tiny", render: row => OT.esc((row.wallet || {}).name || "—") },
+  { label: "address", cls: "mono tiny", render: row => OT.esc((row.wallet || {}).address || "—") },
+];
+
+async function loadFleet() {
+  try {
+    const data = await OT.get("/api/tokens/fleet");
+    const plan = data.plan || {};
+    const manifest = data.manifest || {};
+    $("fleet-out").innerHTML = OT.kv([
+      ["tokens minted", `<b>${OT.fmtInt(manifest.count || 0)}</b>`],
+      ["wallets", OT.fmtInt(manifest.wallets || 0)],
+      ["plan", `${OT.fmtInt(plan.to_mint || 0)} to mint · ${OT.fmtInt(plan.existing || 0)} already on chain`],
+      ["estimate", plan.estimated_tor == null ? "—" : `${OT.esc(plan.estimated_tor)} TOR worst case`],
+      ["logos", `${OT.fmtInt((plan.images || {}).with_image || 0)} of ${OT.fmtInt(plan.count || 0)}`],
+    ]) + OT.table(data.entries || [], FLEET_COLUMNS,
+                  "no token has been minted by this node yet — press plan");
+  } catch (problem) {
+    fail("fleet-out", problem);
+  }
+}
+
+async function runFleet(planOnly) {
+  const majors = Number($("fleet-majors").value) || 100;
+  const memes = Number($("fleet-memes").value) || 20;
+  const fund_tor = Number($("fleet-fund").value) || 6;
+  if (!planOnly && !window.confirm(
+      `Create one wallet per asset and mint ${majors + memes} tokens? The chain ` +
+      `charges 5 TOR per token, each wallet is funded with ${fund_tor} TOR, and ` +
+      `this cannot be undone.`)) return;
+  $("fleet-out").innerHTML =
+    `<span class="spinner"></span> ${planOnly ? "planning" : "minting"} ${majors + memes} asset(s)…`;
+  try {
+    const data = await OT.post("/api/tokens/fleet",
+      { majors, memes, fund_tor, dry_run: planOnly });
+    const rows = data.dry_run ? (data.tokens || []) : (data.created || []);
+    $("fleet-out").innerHTML = OT.kv([
+      ["mode", data.dry_run ? `<span class="badge info">plan only</span>` : `<span class="badge ok">minted</span>`],
+      ["assets", OT.fmtInt(data.count)],
+      ["to mint", OT.fmtInt(data.to_mint ?? 0)],
+      ["already on chain", OT.fmtInt(data.existing ?? 0)],
+      ["estimate", `${OT.esc(data.estimated_tor ?? 0)} TOR worst case`],
+      ["created", OT.fmtInt(data.created_count ?? 0)],
+      ["failed", OT.fmtInt((data.failed || []).length)],
+      ["document", OT.esc(data.document || "—")],
+    ]) + OT.table(rows, FLEET_COLUMNS, "nothing to mint");
+    if (!planOnly) await loadFleet();
+  } catch (problem) {
+    fail("fleet-out", problem);
+  }
+}
+
+async function loadFleetFeed(refresh) {
+  const hint = $("fleet-feed");
+  try {
+    if (refresh) {
+      hint.textContent = "fetching from the providers…";
+      const reply = await OT.post("/api/tokens/universe/refresh", {});
+      const done = reply.refreshed || {};
+      hint.innerHTML = `<span class="badge ok">refreshed</span> ` +
+        `${OT.fmtInt(done.count || 0)} assets · majors ` +
+        `${OT.esc((done.majors || {}).source || "—")} · memes ` +
+        `${OT.esc((done.memes || {}).source || "—")}`;
+      await loadFleet();
+      return;
+    }
+    const data = await OT.get("/api/tokens/universe");
+    const majors = data.majors || {};
+    const memes = data.memes || {};
+    hint.innerHTML =
+      `${OT.fmtInt(data.count || 0)} assets · majors ${OT.esc(majors.source || "—")} ` +
+      `(${OT.fmtInt(majors.returned || 0)}/${OT.fmtInt(majors.requested || 0)}) · memes ` +
+      `${OT.esc(memes.source || "—")} (${OT.fmtInt(memes.returned || 0)}/` +
+      `${OT.fmtInt(memes.requested || 0)})` +
+      (data.stale ? ` · <span class="badge info">stale</span>` : "") +
+      ((data.errors || []).length ? ` · ${OT.esc(data.errors[0])}` : "");
+  } catch (problem) {
+    hint.innerHTML = `<span class="err">${OT.esc(problem.code || "")}: ${OT.esc(problem.message || problem)}</span>`;
+  }
+}
+
+$("fleet-plan").addEventListener("click", () => runFleet(true));
+$("fleet-run").addEventListener("click", () => runFleet(false));
+$("fleet-feed-refresh").addEventListener("click", () => loadFleetFeed(true));
+loadFleetFeed(false);
+loadFleet();
+$("policy-run").addEventListener("click", loadPolicy);
+$("fees-reload").addEventListener("click", loadFees);
+$("fees-save").addEventListener("click", saveFees);
+$("fees-reset").addEventListener("click", resetAllFees);
+$("verify-run").addEventListener("click", loadVerify);
+$("events-run").addEventListener("click", loadEvents);
+
+$("tx-run").addEventListener("click", async () => {
+  let payload;
+  try {
+    payload = JSON.parse($("tx-body").value);
+  } catch (problem) {
+    OT.toast("that is not valid JSON", "bad");
+    return;
+  }
+  if (!confirm("Broadcast this signed transaction to the chain?")) return;
+  $("tx-run").disabled = true;
+  $("tx-status").innerHTML = `<span class="spinner"></span> broadcasting…`;
+  try {
+    const data = await OT.post("/api/chain/tx", payload);
+    $("tx-status").innerHTML = `<span class="badge ok">accepted</span>`;
+    $("tx-out").textContent = JSON.stringify(data, null, 2);
+  } catch (problem) {
+    $("tx-status").innerHTML = `<span class="badge bad">rejected</span>`;
+    $("tx-out").innerHTML = `<span class="err">${OT.esc(problem.code)}: ${OT.esc(problem.message)}</span>`;
+  } finally {
+    $("tx-run").disabled = false;
+  }
+});
+
+document.addEventListener("DOMContentLoaded", () => {
+  loadAccount();
+  loadSync();
+  loadVerify();
+  loadFees();
+  loadEvents();
+  loadNodes();
+  loadCoverage();
+  loadRouting();
+  loadPolicy();
+  loadTokenImages();
+  setInterval(() => { if (!document.hidden) loadAdminWallet(); }, 20000);
+});
+
+</script>
+{% endblock %}

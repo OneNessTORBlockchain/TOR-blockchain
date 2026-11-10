@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <div class="row">
+    <div>
+      <div class="eyebrow">rust · rustc --emit=metadata · 5 TOR</div>
+      <h2 style="margin:0">Smart contracts</h2>
+      <p class="tiny" style="margin:.3rem 0 0">
+        Only authorized nodes may deploy. The source is compiled before it is stored, the
+        5 TOR fee settles on-chain first, and calls are recorded with their result.
+      </p>
+    </div>
+    <div class="spacer"></div>
+    <button class="btn ghost small" id="reload">reload</button>
+  </div>
+  <div class="grid g3" id="templates" style="margin-top:.8rem">loading templates…</div>
+</section>
+
+<section class="grid g2">
+  <div class="panel">
+    <h2><span class="dot"></span>Deploy <span class="badge info">your wallet pays + owns</span></h2>
+    <div class="grid g2" style="gap:.5rem">
+      <div class="field"><label for="name">name</label><input id="name" placeholder="escrow-1"></div>
+      <div class="field"><label for="template">template</label><select id="template"></select></div>
+      <div class="field"><label for="owner">owner wallet</label><select id="owner"></select></div>
+      <div class="field"><label for="payer">payer wallet</label><select id="payer"></select></div>
+    </div>
+    <label for="source">source (optional — overrides the template)</label>
+    <textarea id="source" placeholder="pub fn call(...) { … }" style="min-height:120px"></textarea>
+    <div class="row" style="margin-top:.6rem"><button class="btn" id="deploy">compile + deploy (5 TOR)</button></div>
+    <div id="deploy-out" style="margin-top:.6rem"></div>
+  </div>
+
+  <div class="panel">
+    <h2><span class="dot"></span>Call a contract</h2>
+    <div class="grid g2" style="gap:.5rem">
+      <div class="field"><label for="contract">contract</label><select id="contract"></select></div>
+      <div class="field"><label for="function">function</label><select id="function"></select></div>
+    </div>
+    <label for="args">args (JSON)</label>
+    <textarea id="args" style="min-height:84px">{"amount_tor": 1}</textarea>
+    <div class="row" style="margin-top:.6rem"><button class="btn small" id="call">call</button></div>
+    <div id="call-out" style="margin-top:.6rem"></div>
+    <h3 style="margin-top:1rem;font-size:.8rem;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim)">
+      authorized nodes
+    </h3>
+    <div id="nodes"></div>
+  </div>
+</section>
+
+<section class="panel">
+  <h2><span class="dot"></span>Deployed</h2>
+  <div id="contracts">loading…</div>
+  <div id="api-log" class="log" style="margin-top:.8rem;max-height:170px"></div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const $ = id => document.getElementById(id);
+let contracts = [];
+let templates = [];
+
+function options(select, rows, valueKey, labelFn) {
+  select.innerHTML = rows.map(row =>
+    `<option value="${OT.esc(row[valueKey])}">${OT.esc(labelFn(row))}</option>`).join("");
+}
+
+async function loadTemplates() {
+  const data = await OT.get("/api/contracts/templates");
+  templates = data.templates;
+  options($("template"), templates, "id", row => `${row.name} (${row.id})`);
+  $("templates").innerHTML = templates.map(row => `
+    <div class="feature">
+      <div class="glyph">⌬</div>
+      <h3>${OT.esc(row.name)}</h3>
+      <p>${OT.esc(row.description)}</p>
+      <div class="row">${row.functions.map(fn => `<span class="badge">${OT.esc(fn)}</span>`).join("")}</div>
+      <p class="tiny" style="margin-top:.5rem">${row.source_bytes} bytes of Rust</p>
+      <button class="btn ghost small" data-template="${OT.esc(row.id)}">use template</button>
+    </div>`).join("");
+}
+
+async function loadWallets() {
+  const list = await OT.myWallets();
+  for (const select of [$("owner"), $("payer")]) OT.fillWalletSelect(select, list);
+}
+
+function setFunctionOptions(contract) {
+  options($("function"), (contract?.functions || []).map(fn => ({ fn })), "fn", row => row.fn);
+}
+
+async function loadContracts() {
+  const data = await OT.get("/api/contracts?limit=50");
+  contracts = data.contracts;
+  options($("contract"), contracts, "id", row => `${row.id} · ${row.name} (${row.template})`);
+  $("contracts").innerHTML = OT.table(contracts, [
+    { label: "id", cls: "mono", key: "id" },
+    { label: "name", render: row => `<b>${OT.esc(row.name)}</b>` },
+    { label: "template", render: row => OT.badge(row.template) },
+    { label: "owner", cls: "mono", render: row => OT.esc(OT.short(row.owner_address, 8)) },
+    { label: "compiled", render: row => row.compile?.checked
+        ? (row.compile.ok ? `<span class="badge ok">ok</span>` : `<span class="badge bad">failed</span>`)
+        : `<span class="badge">not compiled</span>` },
+    { label: "calls", cls: "mono", render: row => row.state?.calls ?? 0 },
+    { label: "fee", cls: "mono", render: row => `${row.charge?.amount_tor ?? "—"} TOR` },
+    { label: "", render: row => `<button class="btn ghost small" data-open="${OT.esc(row.id)}">inspect</button>` },
+  ], "no contracts deployed yet");
+  $("nodes").innerHTML = OT.table(data.nodes, [
+    { label: "node", key: "name" },
+    { label: "address", cls: "mono", render: row => OT.esc(OT.short(row.address, 8)) },
+    { label: "fingerprint", cls: "mono", key: "fingerprint" },
+    { label: "authorized", render: row => row.authorized
+        ? `<span class="badge ok">yes</span>` : `<span class="badge bad">no</span>` },
+  ], "no nodes");
+  if (contracts.length) setFunctionOptions(contracts[0]);
+}
+
+$("templates").addEventListener("click", event => {
+  const button = event.target.closest("button[data-template]");
+  if (!button) return;
+  $("template").value = button.dataset.template;
+  $("name").value = `${button.dataset.template}-${Date.now().toString().slice(-4)}`;
+  $("source").value = "";
+  $("deploy-out").innerHTML = `<span class="badge info">${OT.esc(button.dataset.template)}</span>
+    <span class="tiny">template selected — deploy to compile it</span>`;
+});
+
+$("contract").addEventListener("change", () => {
+  const contract = contracts.find(row => row.id === $("contract").value);
+  setFunctionOptions(contract);
+});
+
+$("contracts").addEventListener("click", event => {
+  const button = event.target.closest("button[data-open]");
+  if (!button) return;
+  const contract = contracts.find(row => row.id === button.dataset.open);
+  if (!contract) return;
+  $("deploy-out").innerHTML = OT.kv([
+    ["id", OT.esc(contract.id)],
+    ["source sha3", `<span class="mono">${OT.esc(contract.source_sha3)}</span>`],
+    ["txid", `<span class="mono">${OT.esc(contract.txid || "—")}</span>`],
+    ["state", `<span class="mono">${OT.esc(JSON.stringify(contract.state))}</span>`],
+  ]) + `<details><summary class="tiny">source</summary><pre class="code">${OT.esc(contract.source)}</pre></details>`;
+});
+
+$("deploy").addEventListener("click", async () => {
+  const name = $("name").value.trim();
+  if (!name) { OT.toast("give the contract a name", "bad"); return; }
+  $("deploy-out").innerHTML =
+    `<span class="spinner"></span> compiling with rustc, then charging 5 TOR…`;
+  try {
+    const data = await OT.post("/api/contracts", {
+      name, template: $("template").value || undefined,
+      source: $("source").value.trim() || undefined,
+      owner_wallet: $("owner").value, wallet: $("payer").value,
+    });
+    $("deploy-out").innerHTML = `<span class="badge ok">deployed</span>` + OT.kv([
+      ["id", OT.esc(data.contract.id)],
+      ["compiled", data.contract.compile?.checked
+        ? (data.contract.compile.ok ? "yes (rustc)" : "no") : "rustc missing"],
+      ["txid", `<span class="mono">${OT.esc(data.txid)}</span>`],
+      ["fee", `${data.charge.amount_tor} TOR`],
+      ["height", OT.esc(data.charge.height)],
+    ]);
+    loadContracts(); loadWallets();
+  } catch (problem) {
+    $("deploy-out").innerHTML = `<span class="badge bad">${OT.esc(problem.code)}</span>
+      <span class="tiny">${OT.esc(problem.message)}</span>` +
+      (problem.details?.stderr
+        ? `<pre class="code bad">${OT.esc(problem.details.stderr)}</pre>` : "");
+  }
+});
+
+$("call").addEventListener("click", async () => {
+  let args = {};
+  try { args = JSON.parse($("args").value || "{}"); }
+  catch (_) { OT.toast("args must be valid JSON", "bad"); return; }
+  $("call-out").innerHTML = `<span class="spinner"></span> calling…`;
+  try {
+    const data = await OT.post(
+      `/api/contracts/${encodeURIComponent($("contract").value)}/call`,
+      { function: $("function").value, args });
+    $("call-out").innerHTML = `<span class="badge ok">result</span>` + OT.kv([
+      ["function", OT.esc($("function").value)],
+      ["result", `<span class="mono">${OT.esc(JSON.stringify(data.result))}</span>`],
+      ["state", `<span class="mono">${OT.esc(JSON.stringify(data.state))}</span>`],
+    ]);
+    loadContracts();
+  } catch (problem) {
+    $("call-out").innerHTML = `<span class="badge bad">${OT.esc(problem.code)}</span>
+      <span class="tiny">${OT.esc(problem.message)}</span>`;
+  }
+});
+
+$("reload").addEventListener("click", () => { loadContracts(); loadTemplates(); });
+document.addEventListener("DOMContentLoaded", async () => {
+  try {
+    await loadTemplates();
+    await loadWallets();
+    await loadContracts();
+  } catch (problem) {
+    OT.toast(problem.message, "bad");
+  }
+});
+</script>
+{% endblock %}

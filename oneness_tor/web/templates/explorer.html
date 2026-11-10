@@ -1,0 +1,329 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <div class="row">
+    <div style="flex:1;min-width:240px">
+      <div class="eyebrow">ledger · rust node</div>
+      <h2 style="margin:0">Explorer</h2>
+    </div>
+    <div class="field" style="flex:2;min-width:260px">
+      <label for="q">address · txid · height · block hash</label>
+      <input id="q" placeholder="TOR1…onion / 64-hex txid / 12 / block hash">
+    </div>
+    <button class="btn" id="search" style="align-self:flex-end">inspect</button>
+  </div>
+  <div id="result" style="margin-top:.9rem">
+    <div class="empty">Search an address, transaction or block — the answer comes from
+      <code>/api/account</code>, <code>/api/chain/tx</code> or <code>/api/chain/block</code>.</div>
+  </div>
+</section>
+
+<section class="grid g2">
+  <div class="panel">
+    <h2><span class="dot"></span>Chain</h2>
+    <div id="info">reading…</div>
+    <div class="row" style="margin-top:.7rem">
+      <button class="btn ghost small" id="verify">verify supply</button>
+      <button class="btn ghost small" id="sync">peer sync status</button>
+    </div>
+    <div id="verify-out" style="margin-top:.6rem"></div>
+  </div>
+  <div class="panel">
+    <h2><span class="dot"></span>Records — privacy asked per transaction</h2>
+    <p class="tiny">Every send carries the mode its wallet chose: <b>public</b> records
+       show the sending address, <b>anonymous</b> records show
+       <code>{{ privacy_label }}</code> instead. Only the sender's own address is
+       ever hidden — the receiver always stays on the record. Nothing expires:
+       the ledger keeps every record. Amount, fee and the balance sheet stay
+       public either way:
+       <a href="/api/privacy" target="_blank" rel="noopener">/api/privacy</a>.</p>
+    <div class="row">
+      <div class="field"><label for="limit">records</label>
+        <input id="limit" type="number" value="12" min="1" max="100"></div>
+      <button class="btn small" id="load-records" style="align-self:flex-end">load</button>
+    </div>
+    <div id="records" style="margin-top:.6rem"></div>
+  </div>
+</section>
+
+<section class="grid g2">
+  <div class="panel">
+    <h2><span class="dot"></span>Blocks</h2>
+    <div class="row">
+      <div class="field"><label for="from">from</label><input id="from" type="number" value="0"></div>
+      <div class="field"><label for="to">to</label><input id="to" type="number" placeholder="latest"></div>
+      <button class="btn small" id="load-blocks" style="align-self:flex-end">load</button>
+    </div>
+    <div id="blocks" style="margin-top:.6rem">—</div>
+  </div>
+  <div class="panel">
+    <h2><span class="dot"></span>Tokens &amp; pools</h2>
+    <div id="tokens">—</div>
+    <div id="pools" style="margin-top:.6rem"></div>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="row">
+    <div>
+      <div class="eyebrow">permanent public data · balances · totals · holders</div>
+      <h2 style="margin:0">Public ledger</h2>
+    </div>
+    <div class="spacer"></div>
+    <span class="badge" id="ledger-state">reading…</span>
+    <button class="btn ghost small" id="ledger-reload">reload</button>
+  </div>
+  <p class="tiny" style="margin:.35rem 0 0">
+    Every balance, supply, holder count and total on this chain is public,
+    permanent and fetchable — <code>/api/public/ledger</code>,
+    <code>/api/public/balances</code>, <code>/api/public/totals</code>,
+    <code>/api/public/tokens</code> and
+    <code>/api/public/tokens/&lt;SYMBOL&gt;/holders</code>. Only moving value
+    needs the owner's signature; reading never does.
+  </p>
+  <div class="row" style="margin-top:.5rem">
+    <a class="btn ghost small" href="/api/public/ledger" target="_blank" rel="noopener">ledger JSON</a>
+    <a class="btn ghost small" href="/api/public/totals" target="_blank" rel="noopener">totals JSON</a>
+    <a class="btn ghost small" href="/api/public/balances" target="_blank" rel="noopener">balance sheet JSON</a>
+    <a class="btn ghost small" href="/api/public/tokens" target="_blank" rel="noopener">token table JSON</a>
+  </div>
+  <div id="ledger-totals" class="grid g3" style="margin-top:.7rem"></div>
+  <div id="ledger-accounts" style="margin-top:.7rem">reading balances…</div>
+</section>
+
+<section class="panel">
+  <h2><span class="dot"></span>Every call this page makes</h2>
+  <div id="api-log" class="log"></div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const $ = id => document.getElementById(id);
+
+function showAccount(data) {
+  $("result").innerHTML = `<div class="row"><span class="badge info">account</span>
+    <span class="mono">${OT.esc(data.address)}</span>
+    <button class="btn ghost small" data-copy="${OT.esc(data.address)}">copy</button></div>` +
+    `<div class="grid g3" style="margin-top:.7rem">
+       <div class="stat"><div class="k">balance</div><div class="v">${OT.fmtTor(data.balance_micro)}</div><div class="s">TOR</div></div>
+       <div class="stat"><div class="k">nonce</div><div class="v">${OT.esc(data.nonce)}</div><div class="s">${OT.esc(data.role || "")}</div></div>
+       <div class="stat"><div class="k">tokens</div><div class="v">${Object.keys(data.tokens || {}).length}</div>
+         <div class="s">${OT.esc(JSON.stringify(data.tokens || {}))}</div></div>
+     </div>`;
+}
+
+function showFields(kind, record, badgeClass) {
+  const rows = Object.entries(record).map(([key, value]) =>
+    `<dt>${OT.esc(key)}</dt><dd>${OT.esc(typeof value === "object"
+      ? JSON.stringify(value) : value)}</dd>`).join("");
+  $("result").innerHTML = `<div class="row"><span class="badge ${badgeClass}">${OT.esc(kind)}</span>
+    <span class="mono">${OT.esc(record.txid || record.hash || "")}</span></div>
+    <dl class="kv" style="margin-top:.6rem">${rows}</dl>`;
+}
+
+async function search() {
+  const term = $("q").value.trim();
+  if (!term) return;
+  $("result").innerHTML = `<span class="spinner"></span> resolving ${OT.esc(term)}…`;
+  try {
+    if (term.startsWith("TOR1")) {
+      showAccount(await OT.get(`/api/account/${encodeURIComponent(term)}`));
+    } else if (/^\d+$/.test(term)) {
+      const block = await OT.get(`/api/chain/block/${term}`);
+      showFields("block", { height: block.height, hash: block.hash,
+        prev_hash: block.prev_hash, timestamp: OT.when(block.timestamp),
+        proposer: block.proposer, state_root: block.state_root,
+        txs: (block.txids || []).length }, "info");
+    } else if (/^[0-9a-f]{64}$/i.test(term)) {
+      try {
+        showFields("record", await OT.get(`/api/chain/tx/${term}`), "violet");
+      } catch (_) {
+        const block = await OT.get(`/api/chain/block/${term}`);
+        showFields("block", { height: block.height, hash: block.hash,
+          timestamp: OT.when(block.timestamp), txs: (block.txids || []).length }, "info");
+      }
+    } else {
+      throw new Error("expected TOR1…onion, a txid, a height or a block hash");
+    }
+  } catch (problem) {
+    $("result").innerHTML = `<span class="badge bad">${OT.esc(problem.code || "ERROR")}</span>
+      <span class="tiny">${OT.esc(problem.message)}</span>`;
+  }
+}
+
+async function loadInfo() {
+  try {
+    const info = await OT.get("/api/chain/info");
+    $("info").innerHTML = OT.kv([
+      ["chain id", OT.esc(info.chain_id)],
+      ["height", OT.fmtInt(info.height)],
+      ["head hash", OT.esc(info.head_hash)],
+      ["genesis", OT.esc(info.genesis_hash)],
+      ["total supply", `${OT.fmtTor(info.total_supply_micro)} TOR`],
+      ["founder", OT.esc(info.founder)],
+      ["fee receiver", OT.esc(info.fee_receiver)],
+      ["records", "permanent · nothing expires"],
+      ["coin", `${OT.esc(info.coin?.name)} (${OT.esc(info.coin?.symbol)})`],
+    ]);
+    if (info.coin?.image) {
+      $("info").innerHTML += `<img src="${OT.esc(info.coin.image)}" alt="TOR"
+        style="width:56px;border-radius:12px;margin-top:.6rem;box-shadow:0 0 24px rgba(34,245,255,.4)">`;
+    }
+  } catch (problem) {
+    $("info").innerHTML = `<span class="badge bad">${OT.esc(problem.message)}</span>`;
+  }
+}
+
+async function loadRecords() {
+  try {
+    const data = await OT.get(`/api/public/records?limit=${$("limit").value || 12}`);
+    $("records").innerHTML = OT.table(data.records, [
+      { label: "txid", cls: "mono", render: row => OT.esc(OT.short(row.txid, 8)) },
+      { label: "kind", render: row => OT.badge(row.kind) },
+      { label: "amount", cls: "mono", render: row => row.token
+          ? `${OT.esc(row.amount)} ${OT.esc(row.token)}` : `${OT.fmtTor(row.amount)} TOR` },
+      { label: "from", cls: "mono", render: row => OT.esc(OT.short(row.from, 7)) },
+      { label: "privacy", render: row => row.anonymous
+          ? `<span class="badge violet" title="the sender chose anonymous">anonymous</span>`
+          : `<span class="badge" title="the sender chose public">public</span>` },
+      { label: "height", render: row => OT.esc(row.height) },
+      { label: "to", cls: "mono", render: row => OT.esc(OT.short(row.to, 7)) },
+    ], "no public records yet");
+  } catch (problem) {
+    $("records").innerHTML = `<span class="badge bad">${OT.esc(problem.message)}</span>`;
+  }
+}
+
+async function loadBlocks() {
+  try {
+    const query = new URLSearchParams();
+    query.set("from", $("from").value || 0);
+    if ($("to").value) query.set("to", $("to").value);
+    const data = await OT.get(`/api/chain/blocks?${query}`);
+    $("blocks").innerHTML = OT.table((data.blocks || []).slice().reverse(), [
+      { label: "height", render: row => OT.esc(row.height) },
+      { label: "hash", cls: "mono", render: row => OT.esc(OT.short(row.hash, 8)) },
+      { label: "txs", render: row => (row.txids || []).length },
+      { label: "time", render: row => OT.esc(OT.when(row.timestamp)) },
+      { label: "", render: row => `<button class="btn ghost small" data-height="${row.height}">open</button>` },
+    ], "no blocks");
+  } catch (problem) {
+    $("blocks").innerHTML = `<span class="badge bad">${OT.esc(problem.message)}</span>`;
+  }
+}
+
+async function loadTokens() {
+  try {
+    const tokens = await OT.get("/api/tokens");
+    // newest mint first: the chain stamps every token_create, so the market the
+    // node just minted leads the table instead of hiding behind its own size
+    const rows = Object.values(tokens).filter(Boolean).sort((left, right) =>
+      Number(right.created_at || 0) - Number(left.created_at || 0));
+    $("tokens").innerHTML = OT.table(rows, [
+      { label: "logo", render: row => {
+          const image = OT.tokenIcon(row);
+          return `<img src="${OT.esc(image.src)}" alt="" width="22" height="22"
+            style="border-radius:50%;vertical-align:middle"
+            title="${OT.esc(image.source)}">`;
+        } },
+      { label: "symbol", render: row => `<b>${OT.esc(row.symbol)}</b>` },
+      { label: "name", key: "name" },
+      { label: "supply", cls: "mono", render: row => OT.fmtInt(row.supply) },
+      { label: "owner", cls: "mono", render: row => OT.esc(OT.short(row.owner, 7)) },
+      { label: "", render: row => `<a class="btn ghost small" target="_blank" rel="noopener"
+          href="/api/public/tokens/${OT.esc(row.symbol)}">detail</a>
+        <a class="btn ghost small" target="_blank" rel="noopener"
+          href="/api/public/tokens/${OT.esc(row.symbol)}/holders">holders</a>` },
+    ], "no tokens minted yet");
+    const pools = await OT.get("/api/pools");
+    $("pools").innerHTML = Object.entries(pools).map(([symbol, pool]) =>
+      `<div class="row" style="justify-content:space-between;border-top:1px solid var(--line);padding:.35rem 0">
+        <span class="badge info">${OT.esc(symbol)}</span>
+        <span class="mono tiny">${OT.fmtInt(pool.token_reserve)} tokens · ${OT.fmtTor(pool.tor_reserve)} TOR</span>
+      </div>`).join("") || `<div class="empty">no pools</div>`;
+  } catch (problem) {
+    $("tokens").innerHTML = `<span class="badge bad">${OT.esc(problem.message)}</span>`;
+  }
+}
+
+async function loadLedger() {
+  try {
+    const doc = await OT.get("/api/public/ledger?limit=500");
+    const totals = doc.totals || {};
+    const accounts = doc.accounts || [];
+    $("ledger-state").className = `badge ${doc.node_reachable ? "ok" : "warn"}`;
+    $("ledger-state").textContent = doc.node_reachable
+      ? `height ${OT.fmtInt(doc.height)}` : "node offline";
+    $("ledger-totals").innerHTML = [
+      ["total supply", `${OT.fmtTor(doc.total_supply_micro)} TOR`],
+      ["addresses", OT.fmtInt(doc.accounts_total ?? accounts.length)],
+      ["tokens", OT.fmtInt(totals.tokens)],
+      ["pools", OT.fmtInt(totals.pools)],
+      ["holder positions", OT.fmtInt(totals.holders)],
+      ["micro per TOR", OT.fmtInt(doc.micro_per_tor || 100000000)],
+    ].map(([key, value]) =>
+      `<div class="stat"><div class="k">${OT.esc(key)}</div><div class="v">${value}</div></div>`
+    ).join("");
+    $("ledger-accounts").innerHTML = OT.table(accounts, [
+      { label: "address", cls: "mono", render: row =>
+          `<a class="mono" target="_blank" rel="noopener"
+              href="/api/public/balances/${OT.esc(row.address)}"
+              title="${OT.esc(row.address)}">${OT.esc(OT.short(row.address, 12))}</a>` },
+      { label: "TOR", cls: "mono", render: row => OT.fmtTor(row.balance_micro) },
+      { label: "tokens", cls: "mono", render: row => {
+          const held = Object.entries(row.token_balances || {})
+            .map(([symbol, amount]) => `${OT.esc(symbol)} ${OT.fmtInt(amount)}`);
+          return held.length ? held.join(" · ") : `<span class="tiny muted">none</span>`;
+        } },
+      { label: "role", render: row =>
+          `<span class="badge">${OT.esc(row.role || "holder")}</span>` },
+    ], "no accounts yet — the chain has no funded address");
+  } catch (problem) {
+    $("ledger-state").className = "badge bad";
+    $("ledger-state").textContent = problem.code || "error";
+    $("ledger-accounts").innerHTML =
+      `<span class="badge bad">${OT.esc(problem.message)}</span>`;
+  }
+}
+
+$("search").addEventListener("click", search);
+$("q").addEventListener("keydown", event => { if (event.key === "Enter") search(); });
+$("load-records").addEventListener("click", loadRecords);
+$("load-blocks").addEventListener("click", loadBlocks);
+$("ledger-reload").addEventListener("click", loadLedger);
+$("blocks").addEventListener("click", event => {
+  const button = event.target.closest("button[data-height]");
+  if (!button) return;
+  $("q").value = button.dataset.height;
+  search();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+});
+$("verify").addEventListener("click", async () => {
+  try {
+    const data = await OT.get("/api/chain/verify");
+    $("verify-out").innerHTML = `<span class="badge ok">intact</span>` +
+      OT.kv([["height", OT.esc(data.height)],
+        ["supply", `${OT.fmtTor(data.total_supply)} TOR`],
+        ["founder balance", `${OT.fmtTor(data.founder_balance)} TOR`],
+        ["head", OT.esc(OT.short(data.head_hash, 14))]]);
+  } catch (problem) {
+    $("verify-out").innerHTML = `<span class="badge bad">${OT.esc(problem.message)}</span>`;
+  }
+});
+$("sync").addEventListener("click", async () => {
+  try {
+    $("verify-out").innerHTML = OT.json(await OT.get("/api/chain/sync"));
+  } catch (problem) {
+    $("verify-out").innerHTML = `<span class="badge bad">${OT.esc(problem.message)}</span>`;
+  }
+});
+document.addEventListener("click", event => {
+  const button = event.target.closest("[data-copy]");
+  if (button) OT.copy(button.dataset.copy);
+});
+document.addEventListener("DOMContentLoaded", () => {
+  loadInfo(); loadRecords(); loadBlocks(); loadTokens(); loadLedger();
+});
+</script>
+{% endblock %}

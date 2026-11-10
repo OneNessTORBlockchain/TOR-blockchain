@@ -1,0 +1,19 @@
+# Normalise line endings inside the repo; binary assets stay byte-exact.
+* text=auto
+
+# Shell scripts must be LF even on a Windows checkout: a CRLF `fi` is a syntax
+# error in bash ("unexpected end of file from `if'"), so `bash -n scripts/*.sh`
+# would fail on exactly the machine that is about to build the artifact.
+*.sh text eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+
+# The ledger binary shipped for hosts without a Rust toolchain: byte-exact and
+# executable (git records mode 100755), never line-ending converted.
+bin/torchain binary

@@ -1,0 +1,304 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="grid g2">
+  <div class="panel">
+    <div class="eyebrow">locked price table · core/pricing.py</div>
+    <h2 style="margin:0">Plans</h2>
+    <div id="plans" style="margin-top:.7rem">loading…</div>
+    <p class="tiny" style="margin-top:.6rem">
+      LOCKED rows ignore <code>pricing.overrides</code>. Every charge is a signed transfer
+      to the fee receiver — open the explorer to see it.
+    </p>
+  </div>
+  <div class="panel" id="rev-panel">
+    <h2><span class="dot"></span>Revenue <span class="badge info">operator</span></h2>
+    <div class="grid g2" style="gap:.6rem">
+      <div class="stat gold"><div class="k">settled</div><div class="v" id="rev-total">…</div><div class="s">TOR</div></div>
+      <div class="stat"><div class="k">paid invoices</div><div class="v" id="rev-count">…</div><div class="s" id="rev-open">open</div></div>
+    </div>
+    <div id="rev-codes" style="margin-top:.7rem"></div>
+  </div>
+</section>
+
+<section class="panel" id="paypal-widget">
+  <div class="row">
+    <h2 style="margin:0"><span class="dot"></span>Buy or sell TOR with PayPal</h2>
+    <div class="spacer"></div>
+    <span class="badge" id="pp-gate">…</span>
+  </div>
+  <p class="tiny" id="pp-note">reading the gate…</p>
+  <div class="grid g2" style="gap:.5rem">
+    <div class="field"><label for="pp-tor">amount (TOR)</label>
+      <input id="pp-tor" type="number" value="10" min="0.01" step="0.01"></div>
+    <div class="field"><label for="pp-usd">you pay (USD)</label>
+      <input id="pp-usd" readonly placeholder="…"></div>
+  </div>
+  <div class="field" style="margin-top:.5rem"><label for="pp-address">receive address (buy)</label>
+    <input id="pp-address" class="mono" placeholder="TOR1…onion"></div>
+  <div class="grid g2" style="gap:.5rem;margin-top:.5rem">
+    <div class="field"><label for="pp-wallet">sell from (wallet)</label>
+      <select id="pp-wallet"></select></div>
+    <div class="field"><label for="pp-note">note</label>
+      <input id="pp-note" placeholder="optional"></div>
+  </div>
+  <div class="row" style="margin-top:.6rem">
+    <button class="btn" id="pp-buy">buy with PayPal</button>
+    <button class="btn ghost" id="pp-sell">sell TOR for PayPal</button>
+  </div>
+  <div id="pp-out" style="margin-top:.7rem"></div>
+  <p class="tiny" style="margin-top:.6rem">
+    A buy is a <strong>treasury sale</strong>: the chain has no mint, so the TOR comes from
+    the treasury wallet. A sell records a payout obligation only after the TOR deposit is
+    proved on chain — no fiat leaves this node on its own.
+  </p>
+</section>
+
+
+<section class="grid g2">
+  <div class="panel">
+    <h2><span class="dot"></span>Quote</h2>
+    <div class="grid g2" style="gap:.5rem">
+      <div class="field"><label for="quote-code">code</label><select id="quote-code"></select></div>
+      <div class="field"><label for="quote-qty">quantity</label>
+        <input id="quote-qty" type="number" value="1" min="0.1" step="0.1"></div>
+    </div>
+    <div class="row" style="margin-top:.6rem"><button class="btn small" id="do-quote">quote</button></div>
+    <div id="quote-out" style="margin-top:.6rem"></div>
+  </div>
+
+  <div class="panel">
+    <h2><span class="dot"></span>New invoice <span class="badge info">operator</span></h2>
+    <p class="tiny">
+      Invoices are issued by the node operator from an admin session
+      (<a href="/admin">/admin</a>) — the admin token is never asked for. Anyone can pay an
+      open invoice with their own account wallet.
+    </p>
+    <div class="grid g2" style="gap:.5rem">
+      <div class="field"><label for="inv-code">code</label><select id="inv-code"></select></div>
+      <div class="field"><label for="inv-wallet">payer wallet</label><select id="inv-wallet"></select></div>
+    </div>
+    <label for="inv-note">note</label><input id="inv-note" placeholder="what is this for">
+    <div class="row" style="margin-top:.6rem"><button class="btn" id="create-inv">create invoice</button></div>
+    <div id="inv-out" style="margin-top:.6rem"></div>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="row">
+    <h2 style="margin:0"><span class="dot"></span>Invoices</h2>
+    <div class="spacer"></div>
+    <div class="field"><label for="filter">status</label>
+      <select id="filter"><option value="">all</option><option value="open">open</option>
+        <option value="paid">paid</option></select></div>
+    <button class="btn ghost small" id="reload" style="align-self:flex-end">reload</button>
+  </div>
+  <div id="invoices" style="margin-top:.7rem">loading…</div>
+  <div id="pay-out" style="margin-top:.6rem"></div>
+  <div id="api-log" class="log" style="margin-top:.8rem;max-height:160px"></div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const $ = id => document.getElementById(id);
+
+function optionList(select, rows, valueKey, labelFn) {
+  select.innerHTML = rows.map(row =>
+    `<option value="${OT.esc(row[valueKey])}">${OT.esc(labelFn(row))}</option>`).join("");
+}
+
+async function loadPlans() {
+  const data = await OT.get("/api/payments/plans");
+  optionList($("quote-code"), data.plans, "code", row => `${row.code} · ${row.tor} TOR`);
+  optionList($("inv-code"), data.plans, "code", row => `${row.code} · ${row.tor} TOR`);
+  $("plans").innerHTML = OT.table(data.plans, [
+    { label: "code", cls: "mono", key: "code" },
+    { label: "what", key: "label" },
+    { label: "price", cls: "mono", render: row => `${row.tor} TOR` },
+    { label: "micro", cls: "mono", render: row => OT.fmtInt(row.micro_tor) },
+    { label: "locked", render: row => row.locked
+        ? `<span class="badge ok">locked</span>` : `<span class="badge">configurable</span>` },
+  ], "no plans");
+}
+
+async function loadWalletOptions() {
+  const list = await OT.myWallets();
+  OT.fillWalletSelect($("inv-wallet"), list);
+}
+
+async function loadInvoices() {
+  const status = $("filter").value;
+  const data = await OT.get(`/api/payments/invoices?limit=25${status ? `&status=${status}` : ""}`);
+  $("invoices").innerHTML = OT.table(data.invoices, [
+    { label: "id", cls: "mono", key: "id" },
+    { label: "code", cls: "mono", key: "code" },
+    { label: "amount", cls: "mono", render: row => `${row.amount_tor} TOR` },
+    { label: "status", render: row => OT.badge(row.status) },
+    { label: "txid", cls: "mono", render: row => row.txid
+        ? `<span title="${OT.esc(row.txid)}">${OT.esc(OT.short(row.txid, 6))}</span>` : "—" },
+    { label: "created", render: row => OT.esc(OT.when(row.created_at)) },
+    { label: "", render: row => row.status === "open"
+        ? `<button class="btn ghost small" data-pay="${OT.esc(row.id)}">pay</button>` : "" },
+  ], "no invoices yet");
+}
+
+async function loadRevenue() {
+  const data = await OT.get("/api/payments/revenue");
+  $("rev-total").textContent = data.total_tor;
+  $("rev-count").textContent = data.count;
+  $("rev-codes").innerHTML = OT.table(data.by_code, [
+    { label: "code", cls: "mono", key: "code" },
+    { label: "count", key: "count" },
+    { label: "TOR", cls: "mono", key: "tor" },
+  ], "no settled revenue yet");
+  const invoices = await OT.get("/api/payments/invoices?limit=200");
+  $("rev-open").textContent = `${invoices.totals.open} open`;
+}
+
+$("invoices").addEventListener("click", async event => {
+  const button = event.target.closest("button[data-pay]");
+  if (!button) return;
+  const walletName = $("inv-wallet").value;
+  if (!walletName) { OT.toast("pick a paying wallet first", "bad"); return; }
+  $("pay-out").innerHTML =
+    `<span class="spinner"></span> settling ${OT.esc(button.dataset.pay)} from ${OT.esc(walletName)}…`;
+  try {
+    const data = await OT.post(
+      `/api/payments/invoices/${encodeURIComponent(button.dataset.pay)}/pay`,
+      { wallet: walletName });
+    $("pay-out").innerHTML = `<span class="badge ok">paid</span>` + OT.kv([
+      ["invoice", OT.esc(data.invoice.id)],
+      ["txid", `<span class="mono">${OT.esc(data.txid)}</span>`],
+      ["height", OT.esc(data.height)],
+      ["amount", `${OT.fmtTor(data.invoice.amount_micro)} TOR`],
+    ]);
+    loadInvoices(); loadRevenue(); loadWalletOptions();
+  } catch (problem) {
+    $("pay-out").innerHTML = `<span class="badge bad">${OT.esc(problem.code)}</span>
+      <span class="tiny">${OT.esc(problem.message)}</span>`;
+  }
+});
+
+$("do-quote").addEventListener("click", async () => {
+  try {
+    const data = await OT.get(
+      `/api/payments/quote?code=${encodeURIComponent($("quote-code").value)}` +
+      `&quantity=${encodeURIComponent($("quote-qty").value || 1)}`);
+    $("quote-out").innerHTML = `<span class="badge info">quote</span>` + OT.kv([
+      ["code", OT.esc(data.code)], ["label", OT.esc(data.label)],
+      ["quantity", OT.esc(data.quantity)],
+      ["total", `${data.tor} TOR`], ["microTOR", OT.fmtInt(data.micro_tor)],
+      ["locked", data.locked ? "yes" : "configurable"],
+    ]);
+  } catch (problem) {
+    $("quote-out").innerHTML = `<span class="badge bad">${OT.esc(problem.message)}</span>`;
+  }
+});
+
+$("create-inv").addEventListener("click", async () => {
+  $("inv-out").innerHTML = `<span class="spinner"></span> opening the invoice…`;
+  try {
+    const data = await OT.post("/api/payments/invoices", {
+      code: $("inv-code").value, wallet: $("inv-wallet").value,
+      note: $("inv-note").value,
+    });
+    $("inv-out").innerHTML = `<span class="badge ok">invoice</span>` + OT.kv([
+      ["id", OT.esc(data.invoice.id)],
+      ["amount", `${data.invoice.amount_tor} TOR`],
+      ["pay to", `<span class="mono">${OT.esc(data.invoice.address)}</span>`],
+      ["status", OT.badge(data.invoice.status)],
+    ]);
+    loadInvoices(); loadRevenue();
+  } catch (problem) {
+    $("inv-out").innerHTML = `<span class="badge bad">${OT.esc(problem.code)}</span>
+      <span class="tiny">${OT.esc(problem.message)}</span>`;
+  }
+});
+
+$("filter").addEventListener("change", loadInvoices);
+$("reload").addEventListener("click", () => { loadInvoices(); loadRevenue(); });
+document.addEventListener("DOMContentLoaded", async () => {
+  const operator = !!OT.adminSession();
+  $("rev-panel").hidden = !operator;
+  $("create-inv").disabled = !operator;
+  if (!operator) {
+    $("inv-out").innerHTML = `<span class="badge info">operator only</span>
+      <span class="tiny">sign in at <a href="/admin">/admin</a> to issue invoices — paying one
+      needs only your wallet</span>`;
+  }
+  try {
+    await loadPlans();
+    await loadWalletOptions();
+    await loadInvoices();
+    await loadRevenue();
+  } catch (problem) {
+    OT.toast(problem.message, "bad");
+  }
+});
+/* ---- PayPal gate: treasury sale for buys, proved deposit for sells ---- */
+let ppRate = null;
+
+function ppRecalc() {
+  const tor = Number($("pp-tor").value || 0);
+  $("pp-usd").value = ppRate ? (tor * ppRate).toFixed(2) : "";
+}
+
+function ppShow(html) { $("pp-out").innerHTML = html; }
+
+async function ppLoad() {
+  try {
+    const data = await OT.get("/api/paypal/status");
+    const open = data.gate === "open";
+    ppRate = data.price_usd;
+    $("pp-gate").className = `badge ${open ? "ok" : "bad"}`;
+    $("pp-gate").textContent = open ? `${data.environment} · open` : "closed";
+    $("pp-note").textContent = open
+      ? `1 TOR = $${data.price_usd}. A buy sends TOR from the treasury wallet (${data.treasury}); this chain mints nothing.`
+      : "Closed: the node has no PayPal credentials or no treasury wallet. Nothing is charged while the gate is closed.";
+    ppRecalc();
+    try { OT.fillWalletSelect($("pp-wallet"), await OT.myWallets()); } catch (ignored) { /* not signed in */ }
+  } catch (problem) { OT.toast(problem.message, "bad"); }
+}
+
+async function ppBuy() {
+  const tor = Number($("pp-tor").value || 0);
+  const wallet = $("pp-address").value.trim();
+  if (!wallet) { OT.toast("paste the address that should receive the TOR", "bad"); return; }
+  try {
+    const data = await OT.post("/api/paypal/buy",
+      { tor, wallet, note: $("pp-note").value });
+    ppShow(`<div class="row"><span class="badge ok">${OT.esc(data.order.status)}</span>
+      <div class="spacer"></div>
+      <a class="btn small" href="${OT.esc(data.approve_url)}" target="_blank" rel="noopener">pay with PayPal</a></div>
+      <p class="tiny" style="margin-top:.5rem">order <span class="mono">${OT.esc(data.order.order_id)}</span>
+      · ${OT.esc(String(data.order.tor))} TOR for $${OT.esc(String(data.order.usd))}
+      · the TOR is sent once the capture is confirmed.</p>`);
+    OT.toast("PayPal order created", "ok");
+  } catch (problem) {
+    ppShow(`<div class="badge bad">${OT.esc(problem.message)}</div>`);
+  }
+}
+
+async function ppSell() {
+  const tor = Number($("pp-tor").value || 0);
+  try {
+    const data = await OT.post("/api/paypal/sell",
+      { tor, wallet: $("pp-wallet").value, note: $("pp-note").value });
+    ppShow(`<p class="tiny">Send <strong>${OT.esc(String(data.order.tor))} TOR</strong> to
+      <span class="mono">${OT.esc(data.order.deposit_address)}</span> with the note
+      <span class="mono">${OT.esc(data.order.deposit_note)}</span>. The payout is marked
+      only after that deposit is proved on chain.</p>`);
+    OT.toast("sell order opened", "ok");
+  } catch (problem) {
+    ppShow(`<div class="badge bad">${OT.esc(problem.message)}</div>`);
+  }
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  $("pp-tor").addEventListener("input", ppRecalc);
+  $("pp-buy").addEventListener("click", ppBuy);
+  $("pp-sell").addEventListener("click", ppSell);
+  ppLoad();
+});
+</script>
+{% endblock %}

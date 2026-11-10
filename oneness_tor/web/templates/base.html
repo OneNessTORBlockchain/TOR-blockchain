@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }} · OneNess TOR</title>
+<meta name="description" content="OneNess TOR — native TOR chain node: live API, wallets, payments, Rust contracts, Ollama command brain and AI app builders.">
+<link rel="icon" href="{{ url_for('pages.image', name='TOR Coin Logo.png') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/oneness.css') }}">
+</head>
+<body data-page="{{ page }}">
+<noscript>
+  <div class="nojs" role="alert">
+    <b>Scripts are blocked in this browser — the buttons and the live refresh are off,
+    the numbers on this page are not.</b>
+    Height, chain, supply, models, revenue and Tor control are printed into the HTML by the
+    node itself when the page was served ({{ live.when }}), so the page reads correctly with
+    JavaScript off. Tor Browser blocks scripts on plain <code>http://</code> onion pages at the
+    <em>Safer</em> / <em>Safest</em> security level: click the shield icon in the address bar,
+    choose <b>Standard</b> (or “Allow scripts on this site”), then reload with Ctrl+Shift+R to
+    get the interactive tools. The JSON endpoints answer with or without a browser:
+    <a href="/api/health">/api/health</a> ·
+    <a href="/api/chain/info">/api/chain/info</a> ·
+    <a href="/api/ollama/status">/api/ollama/status</a>.
+  </div>
+</noscript>
+<div class="bg" aria-hidden="true">
+  <div class="bg-grid"></div>
+  <div class="aurora a1"></div><div class="aurora a2"></div><div class="aurora a3"></div>
+  <div class="scan"></div>
+  <div class="holo-orbit"><span></span><span></span><span></span></div>
+</div>
+
+<header class="topbar">
+  <a class="brand" href="/">
+    <img src="{{ url_for('pages.image', name='TOR Coin Logo.png') }}" alt="TOR coin">
+    <span>OneNess <b>TOR</b><em>node · {{ coin.symbol }}</em></span>
+  </a>
+  <div class="pills">
+    <span class="pill {{ 'on' if live.node_reachable else 'off' }}" id="pill-node">node <b>{{ 'up' if live.node_reachable else 'down' }}</b></span>
+    <span class="pill{{ ' on' if live.height is not none else '' }}" id="pill-height">height <b>{{ live.height_text }}</b></span>
+    <span class="pill {{ 'on' if live.ollama.reachable else 'off' }}" id="pill-ollama">ollama <b>{{ (live.ollama.version or 'up') if live.ollama.reachable else 'down' }}</b></span>
+    <a class="btn ghost small" id="pill-account" href="/wallet">sign in</a>
+  </div>
+</header>
+
+<div class="shell">
+  <nav class="sidebar" aria-label="Sections">
+    {% for item in nav %}
+    <a class="navlink {% if page == item.slug %}active{% endif %}" href="/{{ item.slug }}">
+      <i>{{ item.glyph }}</i>
+      <span>{{ item.label }}<small>{{ item.hint }}</small></span>
+    </a>
+    {% endfor %}
+    <a class="navlink" href="/api/docs" target="_blank" rel="noopener">
+      <i>{ }</i><span>Raw catalog<small>GET /api/docs</small></span>
+    </a>
+  </nav>
+
+  <main class="content">
+    {% block content %}{% endblock %}
+    <footer class="tiny muted" style="padding:.6rem .2rem 0">
+      {{ coin.name }} · {{ coin.native_coin_id }} · {{ coin.decimals }} decimals ·
+      privacy asked per transaction (public or {{ privacy_label }}) ·
+      every record is permanent · nothing expires ·
+      <a href="/coin">coin metadata</a> · <a href="/docs">API</a>
+    </footer>
+  </main>
+</div>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

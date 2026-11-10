@@ -1,0 +1,11 @@
+{
+  "standard": "oneness-tor/security-module/1",
+  "note": "public keys allowed to sign security/privacy-policy.json. This file is committed and reviewed; a node never fetches it. Adding a key here is a consensus change.",
+  "keys": [
+    {
+      "name": "oneness-security-issuer",
+      "pubkey_base58": "F3MtFtqCkP3hzcNh5ko2iYcMhC4cjG3Z2hcTahx6APGe",
+      "added": "2026-11-10T01:35:05Z"
+    }
+  ]
+}

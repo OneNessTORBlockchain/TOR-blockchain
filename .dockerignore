@@ -1,0 +1,14 @@
+.git
+.gitignore
+data
+# the image compiles the ledger from source; the committed fallback is not needed
+bin/torchain
+__pycache__/
+*.pyc
+*.log
+_*.log
+.venv
+venv
+rust/torchain/target
+*.code-workspace
+pytest.ini

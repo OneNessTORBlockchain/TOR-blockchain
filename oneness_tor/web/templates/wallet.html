@@ -1,0 +1,938 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="grid g2">
+  <div class="panel">
+    <div class="row">
+      <div>
+        <div class="eyebrow">username + password · ed25519 key generated on signup</div>
+        <h2 style="margin:0">Your account</h2>
+      </div>
+      <div class="spacer"></div>
+      <span class="badge info" id="account-state">signed out</span>
+    </div>
+    <p class="tiny" style="margin:.35rem 0 .2rem">
+      Signing up runs <code>torchain wallet new</code>: a real Phantom-compatible Ed25519
+      wallet is created and its <b>private key is shown once</b>. The platform uses that
+      wallet for mints, AI-NFTs and deployments — every paid action is charged to it and
+      owned by its address. Need help? <a href="mailto:{{ support_email }}">{{ support_email }}</a>
+    </p>
+    <div class="grid g2" style="gap:.6rem">
+      <div>
+        <h3 style="margin:.2rem 0 .4rem">Create an account</h3>
+        <div class="field"><label for="signup-user">username</label>
+          <input id="signup-user" autocomplete="username" placeholder="kathy"></div>
+        <div class="field"><label for="signup-pass">password (8+ characters)</label>
+          <input id="signup-pass" type="password" autocomplete="new-password"></div>
+        <button class="btn lime small" id="signup-run" style="margin-top:.5rem">sign up + generate wallet</button>
+        <div id="signup-out" style="margin-top:.6rem"></div>
+      </div>
+      <div>
+        <h3 style="margin:.2rem 0 .4rem">Sign in</h3>
+        <div class="field"><label for="login-user">username</label>
+          <input id="login-user" autocomplete="username"></div>
+        <div class="field"><label for="login-pass">password</label>
+          <input id="login-pass" type="password" autocomplete="current-password"></div>
+        <button class="btn small" id="login-run" style="margin-top:.5rem">sign in</button>
+        <div id="login-out" style="margin-top:.6rem"></div>
+      </div>
+    </div>
+    <div id="one-time" style="margin-top:.7rem"></div>
+  </div>
+
+  <div class="panel">
+    <h2><span class="dot"></span>Signed-in wallet</h2>
+    <div id="session-balance" style="margin:.2rem 0 .6rem"></div>
+    <div id="session-view" class="muted tiny">not signed in</div>
+    <div class="row" style="margin-top:.6rem">
+      <button class="btn ghost small" id="session-reload">reload</button>
+      <button class="btn danger small" id="logout-run">sign out</button>
+      <span class="tiny muted" id="session-support"></span>
+    </div>
+    <div id="my-programs" style="margin-top:.7rem"></div>
+    <p class="tiny" style="margin-top:.65rem">
+      The session is <code>x-wallet-session</code> (1 hour). Minting, AI-NFTs, contract and
+      builder deployments use it as the paying + owning wallet. The private key is never
+      returned again after signup.
+    </p>
+  </div>
+</section>
+
+<section class="grid g2">
+  <div class="panel">
+    <div class="row">
+      <div>
+        <div class="eyebrow">ed25519 · up to 5 wallets per account</div>
+        <h2 style="margin:0">Your wallets</h2>
+      </div>
+      <div class="spacer"></div>
+      <button class="btn ghost small" id="reload">reload</button>
+    </div>
+    <div id="wallets" style="margin-top:.7rem">reading the keystore…</div>
+    <p class="tiny" style="margin-top:.6rem">
+      Click a wallet to load its balance, token list, AI-NFTs, public key and receive
+      codes in the panel beside this one. One account can hold <b>five</b> wallets —
+      generated here or imported from Phantom — and every payment dropdown on the
+      site lists all of them. Reads and sends stay owner-only through
+      <code>x-wallet-session</code>; the node operator's keys live on
+      <a href="/admin">/admin</a>.
+    </p>
+  </div>
+
+  <div class="panel">
+    <div class="row">
+      <h2 style="margin:0"><span class="dot"></span>Wallet details</h2>
+      <div class="spacer"></div>
+      <span class="tiny muted" id="detail-at"></span>
+    </div>
+    <div id="detail" class="muted tiny" style="margin-top:.5rem">sign in to load your wallet</div>
+    <div id="receive" style="margin-top:.8rem"></div>
+  </div>
+</section>
+
+<section class="grid g2">
+  <div class="panel">
+    <div class="eyebrow">add a wallet · account password required · max 5</div>
+    <h2 style="margin:0">Generate or import</h2>
+    <p class="tiny" style="margin:.35rem 0 .5rem">
+      A generated wallet is a real Phantom-compatible Ed25519 key made by
+      <code>torchain wallet new</code>. An import accepts a Phantom private key or
+      a 12–24 word recovery phrase and derives the same address the chain uses.
+      Both count toward the five-wallet limit.
+    </p>
+    <div class="field"><label for="add-pass">account password</label>
+      <input id="add-pass" type="password" autocomplete="current-password"></div>
+    <div class="field"><label for="add-label">label (optional)</label>
+      <input id="add-label" placeholder="savings"></div>
+    <button class="btn lime small" id="generate-wallet">generate another wallet</button>
+    <label for="import-key" style="margin-top:.7rem">private key (base58) or recovery words</label>
+    <textarea id="import-key" rows="3" placeholder="64-byte Phantom private key, or 12–24 words"></textarea>
+    <button class="btn small" id="import-wallet" style="margin-top:.45rem">import this wallet</button>
+    <div id="add-out" style="margin-top:.6rem"></div>
+  </div>
+
+  <div class="panel">
+    <div class="eyebrow">export · password re-checked on every request</div>
+    <h2 style="margin:0">SAFELY SAVE YOUR PRIVATE KEY</h2>
+    <p class="tiny" style="margin:.35rem 0 .5rem">
+      Pick a wallet, type the account password, and the node returns that
+      wallet's private key (base58) plus its recovery words when the keystore has
+      them. Nothing is logged, and the key is never returned without the password.
+      Store it offline — anyone with the key controls the balance.
+    </p>
+    <div class="field"><label for="export-wallet">wallet</label>
+      <select id="export-wallet"></select></div>
+    <div class="field"><label for="export-pass">account password</label>
+      <input id="export-pass" type="password" autocomplete="current-password"></div>
+    <button class="btn danger small" id="export-key">export private key</button>
+    <div id="export-out" style="margin-top:.6rem"></div>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="row">
+    <div>
+      <div class="eyebrow">permanent token table · price · address · symbol · image</div>
+      <h2 style="margin:0">Tokens &amp; prices</h2>
+    </div>
+    <div class="spacer"></div>
+    <span class="badge" id="images-state">reading token logos…</span>
+    <button class="btn ghost small" id="tokens-reload">reload</button>
+  </div>
+  <p class="tiny" style="margin:.35rem 0 0">
+    Every row is the permanent public token record (<code>GET /api/tokens/public</code>,
+    <code>GET /api/public/tokens</code>): symbol, name, mint address, supply,
+    circulating supply, holders, owner, AMM price and market cap in TOR. Balances
+    are public too — <code>GET /api/public/balances</code> lists every address,
+    and <code>GET /api/public/tokens/&lt;SYMBOL&gt;/holders</code> lists every
+    holder. Only sending needs a signature. Prices are quoted in TOR only — no
+    fiat rate exists on this node. Each logo is the token's public metadata image
+    (CoinGecko, DexScreener fallback, cached by this node), the launcher image,
+    or a generated identicon when no source knows the ticker.
+  </p>
+  <div id="tokens" style="margin-top:.7rem">reading the token table…</div>
+  <div class="asset-total" id="registry-totals"></div>
+  <div class="asset-total" id="assets-summary"></div>
+
+</section>
+
+<section class="panel">
+  <div class="row">
+    <div>
+      <div class="eyebrow">every record · txid · signature · block hash in hex</div>
+      <h2 style="margin:0">Transactions</h2>
+    </div>
+    <div class="spacer"></div>
+    <span class="tiny muted" id="history-window"></span>
+    <button class="btn ghost small" id="history-reload">reload</button>
+  </div>
+  <div id="history-summary" class="tiny muted" style="margin-top:.4rem"></div>
+  <div id="history" style="margin-top:.6rem">pick a wallet to read its transactions</div>
+  <div id="history-detail" style="margin-top:.6rem"></div>
+</section>
+
+<section class="grid g2">
+  <div class="panel">
+    <h2><span class="dot"></span>Send TOR or a token
+      <span class="badge">node/platform fee 0.1 TOR (TOR sends)</span></h2>
+    <div class="grid g2" style="gap:.5rem">
+      <div class="field"><label for="from">from wallet</label><select id="from"></select></div>
+      <div class="field"><label for="to">to address</label><input id="to" placeholder="TOR1…onion"></div>
+      <div class="field"><label for="token">asset</label><select id="token"></select></div>
+      <div class="field"><label for="amount" id="amount-label">amount (TOR)</label>
+        <input id="amount" value="1" inputmode="decimal"></div>
+    </div>
+    <label for="note">note</label>
+    <input id="note" placeholder="public memo">
+    <div class="field" style="margin-top:.5rem">
+      <label>privacy — asked before every transaction</label>
+      <div class="row" style="gap:.35rem;flex-wrap:wrap">
+        <label class="tiny" style="display:flex;gap:.3rem;align-items:center">
+          <input type="radio" name="privacy" value="public"
+                 {% if privacy_default_mode != 'anonymous' %}checked{% endif %}>
+          Public — my address is on chain</label>
+        <label class="tiny" style="display:flex;gap:.3rem;align-items:center">
+          <input type="radio" name="privacy" value="anonymous"
+                 {% if privacy_default_mode == 'anonymous' %}checked{% endif %}>
+          Anonymous — on chain as <b>{{ privacy_label }}</b></label>
+      </div>
+      <div class="tiny muted" style="margin-top:.3rem">
+        Public publishes this wallet's <b>own</b> address with the record. Anonymous
+        stamps <code>{{ privacy_label }}</code> instead. The receiver is never
+        hidden — you can only choose for your own address. Amount, fee, time and
+        the balance sheet stay public either way
+        (<a href="/api/privacy" target="_blank" rel="noopener">the exact rule</a>).
+      </div>
+    </div>
+    <div class="row" style="margin-top:.6rem">
+      <button class="btn" id="send">send signed transaction</button>
+      <button class="btn ghost" id="sign">only sign (no broadcast)</button>
+    </div>
+    <div id="send-out" style="margin-top:.6rem"></div>
+  </div>
+
+  <div class="panel">
+    <h2><span class="dot"></span>Your AI-NFTs <span class="badge">catalogue</span></h2>
+    <p class="tiny">Every AI-NFT minted to your wallet, read from the public catalogue
+      (<code>GET /api/nft/catalogue</code>) and filtered on your address. Mint a new one on
+      <a href="/nft">/nft</a> — the 3 TOR fee is charged to this wallet and the token is owned
+      by its address.</p>
+    <div class="row" style="margin-top:.6rem">
+      <button class="btn ghost small" id="nfts-reload">reload</button>
+    </div>
+    <div id="nfts" class="grid g2" style="margin-top:.6rem">sign in to see your AI-NFTs</div>
+  </div>
+</section>
+
+<section class="panel">
+  <h2><span class="dot"></span>Live calls</h2>
+  <p class="tiny" style="margin-top:.2rem">
+    Every request this page makes is a real call to this node — the session header
+    (<code>x-wallet-session</code>) is the only credential involved.
+  </p>
+  <div id="api-log" class="log" style="margin-top:.6rem;max-height:190px"></div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const $ = id => document.getElementById(id);
+let selected = null;
+let selectedWallet = null;
+let session = null;
+let wallets = [];
+let registry = { tokens: [] };
+let historyRows = {};
+let liveTimer = null;
+
+/* ------------------------------------------------------------ token icons */
+/* OT.tokenIcon(row) shows row.image — public metadata, the launcher window or
+   the native IPFS pin — and falls back to a deterministic identicon. */
+
+function heldOf(symbol) {
+  const tokens = (selectedWallet || {}).tokens || {};
+  return Number(tokens[String(symbol).toUpperCase()] || 0);
+}
+
+function balanceCard(wallet) {
+  const micro = Number(wallet.balance_micro ?? wallet.balance ?? 0);
+  const tickers = Object.keys(wallet.tokens || {}).length;
+  return `<div class="row" style="align-items:flex-end;gap:1.2rem;flex-wrap:wrap">
+    <div><div class="tiny muted">TOR balance</div>
+      <div class="balance-tor">${OT.fmtTor(micro)} <span class="tiny muted">TOR</span></div></div>
+    <div><div class="tiny muted">token holdings</div>
+      <div class="balance-tor">${OT.fmtInt(tickers)} <span class="tiny muted">ticker(s)</span></div></div>
+    <div class="spacer"></div>
+    <div class="tiny muted"><span class="dot-live"></span>live · every value is quoted in TOR</div>
+  </div>`;
+}
+
+
+
+function oneTimeKey(oneTime) {
+  if (!oneTime) return "";
+  const key = String(oneTime.private_key_base58 || "");
+  const words = String(oneTime.mnemonic || "");
+  return `<div class="panel" style="border-color:var(--bad,#ff5c7a)">
+    <h3 style="margin:0 0 .35rem">Save your private key now — shown once</h3>
+    <p class="tiny">${OT.esc(oneTime.warning || "This is the only time the key is returned.")}</p>
+    <label>private key (base58)</label>
+    <pre class="code" id="one-time-key">${OT.esc(key || "(not exported)")}</pre>
+    <button class="btn small" data-copy="${OT.esc(key)}">copy private key</button>
+    ${words ? `<label style="margin-top:.5rem">recovery words</label>
+      <pre class="code">${OT.esc(words)}</pre>
+      <button class="btn ghost small" data-copy="${OT.esc(words)}">copy words</button>` : ""}
+  </div>`;
+}
+
+/* -------------------------------------------------------- token registry UI */
+function fillAssets() {
+  const rows = (registry.tokens || []).filter(
+    row => String(row.symbol).toUpperCase() !== "TOR");
+  const select = $("token");
+  const held = select.value;
+  select.innerHTML = `<option value="">TOR (native)</option>` + rows.map(row =>
+    `<option value="${OT.esc(row.symbol)}">${OT.esc(row.symbol)} — ${OT.esc(row.name || "")}</option>`
+  ).join("");
+  if (held && [...select.options].some(option => option.value === held)) select.value = held;
+  labelAmount();
+}
+
+function labelAmount() {
+  const token = $("token").value;
+  $("amount-label").textContent = token ? `amount (${token} units)` : "amount (TOR)";
+}
+
+function renderAssets(rows) {
+  const wallet = selectedWallet || {};
+  const micro = Number(wallet.balance_micro ?? wallet.balance ?? 0);
+  let tokenMicro = 0;
+  let heldTickers = 0;
+  rows.forEach(row => {
+    if (String(row.symbol).toUpperCase() === "TOR") return;
+    if ((row.held || 0) > 0) heldTickers += 1;
+    if (!row.price_tor) return;
+    tokenMicro += row.held * Number(row.price_tor) * 1e8;
+  });
+  $("assets-summary").innerHTML = [
+    `<span class="tiny muted">${wallet.name ? `assets of ${OT.esc(wallet.name)}` : "select a wallet"}</span>`,
+    `<span>TOR <b>${OT.fmtTor(micro)}</b></span>`,
+    `<span>tickers held <b>${OT.fmtInt(heldTickers)}</b></span>`,
+    `<span>total <b>${OT.fmtTor(micro + tokenMicro)} TOR</b></span>`,
+    `<span class="tiny muted">TOR-denominated · this node quotes no fiat rate</span>`,
+  ].join("");
+}
+
+
+function renderTokens() {
+  const rows = (registry.tokens || []).map(row => ({ ...row, held: heldOf(row.symbol) }));
+  $("tokens").innerHTML = OT.table(rows, [
+    { label: "token", render: row => {
+        const image = OT.tokenIcon(row);
+        return `<div class="token-name">
+          <img class="token-icon" src="${OT.esc(image.src)}" alt="${OT.esc(row.symbol)}"
+               title="${OT.esc(image.source)}"
+               loading="${image.local ? "eager" : "lazy"}">
+          <span><b>${OT.esc(row.symbol)}</b>
+            <small>${OT.esc(row.name || "—")}</small></span></div>`;
+      } },
+
+    { label: "mint address", cls: "mono", render: row =>
+        `<span title="${OT.esc(row.mint_address)}">${OT.esc(OT.short(row.mint_address, 8))}</span>
+         <button class="btn ghost small" data-copy="${OT.esc(row.mint_address)}">copy</button>` },
+    { label: "price TOR", cls: "mono", render: row =>
+        row.price_tor ? OT.esc(String(row.price_tor)) : `<span class="tiny muted">no pool</span>` },
+    { label: "held", cls: "mono", render: row => OT.fmtInt(row.held) },
+    { label: "value TOR", cls: "mono", render: row => row.price_tor
+        ? OT.fmtTor(row.held * Number(row.price_tor) * 1e8) : "—" },
+
+    { label: "supply", cls: "mono", render: row => OT.fmtInt(row.supply) },
+    { label: "circulating", cls: "mono", render: row => OT.fmtInt(row.circulating) },
+    { label: "holders", cls: "mono", render: row => {
+        const count = row.holders;
+        if (count === null || count === undefined) return "—";
+        return `<a target="_blank" rel="noopener"
+          href="/api/public/tokens/${OT.esc(row.symbol)}/holders"
+          title="every holder and balance (public)">${OT.fmtInt(count)}</a>`;
+      } },
+    { label: "owner", cls: "mono", render: row =>
+        `<span title="${OT.esc(row.owner)}">${OT.esc(OT.short(row.owner || "", 6))}</span>` },
+  ], "the permanent token table is empty");
+  renderAssets(rows);
+}
+
+
+function renderRegistryTotals() {
+  const totals = registry.totals || {};
+  const scale = 1e8;                       // market figures are TOR, fmtTor wants micro
+  $("registry-totals").innerHTML = [
+    `<span>tokens <b>${OT.fmtInt(totals.tokens)}</b></span>`,
+    `<span>market cap <b>${OT.fmtTor((totals.market_cap_tor || 0) * scale)} TOR</b></span>`,
+    `<span>liquidity <b>${OT.fmtTor((totals.liquidity_tor || 0) * scale)} TOR</b></span>`,
+    `<span>24h volume <b>${OT.fmtTor((totals.volume_24h_tor || 0) * scale)} TOR</b></span>`,
+    `<span>holders <b>${OT.fmtInt(totals.holder_positions)}</b></span>`,
+    `<span class="tiny muted">permanent public record ·
+      <a href="/api/public/tokens" target="_blank" rel="noopener">token JSON</a> ·
+      <a href="/api/public/balances" target="_blank" rel="noopener">balances JSON</a> ·
+      <a href="/api/public/totals" target="_blank" rel="noopener">totals JSON</a></span>`,
+  ].join("");
+}
+
+async function loadRegistry() {
+  try {
+    registry = await OT.get("/api/tokens/public");
+    const images = registry.images || {};
+    const count = Number(images.count || 0);
+    const age = images.age_seconds === null || images.age_seconds === undefined
+      ? null : Number(images.age_seconds);
+    $("images-state").className = `badge ${count ? "ok" : "warn"}`;
+    $("images-state").textContent = count
+      ? `${OT.fmtInt(count)} logos · ${images.source}`
+        + (age === null ? " · not cached yet" : ` · cached ${Math.max(1, Math.round(age / 60))}m ago`)
+      : (images.enabled === false ? "logo metadata disabled" : "no logo metadata yet");
+    $("images-state").title = images.last_error || images.note || "";
+    renderTokens();
+    renderRegistryTotals();
+    fillAssets();
+  } catch (problem) {
+    $("tokens").innerHTML = `<span class="badge bad">${OT.esc(problem.code)}</span>
+      <span class="tiny">${OT.esc(problem.message)}</span>`;
+  }
+}
+
+
+function renderSession(data) {
+  const wallet = data.wallet || {};
+  const account = data.account || {};
+  $("session-balance").innerHTML = balanceCard(wallet);
+  $("account-state").className = "badge ok";
+  $("account-state").textContent = account.username ? `signed in · ${account.username}` : "signed in";
+  $("session-view").innerHTML = OT.kv([
+    ["username", `<b>${OT.esc(account.username || "—")}</b>`],
+    ["wallet", OT.esc(wallet.name || OT.walletName())],
+    ["address", `${OT.esc(wallet.address || "—")}
+      <button class="btn ghost small" data-copy="${OT.esc(wallet.address || "")}">copy</button>`],
+    ["balance", `${OT.fmtTor(wallet.balance)} TOR`],
+    ["tokens", OT.esc(JSON.stringify(wallet.tokens || {}))],
+    ["session expires", OT.esc(OT.when((data.session || {}).expires_at))],
+  ]);
+  $("session-support").innerHTML = `support: <a href="mailto:${OT.esc(data.support_email || "")}">${OT.esc(data.support_email || "")}</a>`;
+  if (!selected || selected === wallet.name) {
+    selectedWallet = wallet;
+    renderTokens();
+  }
+}
+
+async function loadMyPrograms() {
+  if (!OT.walletSession()) { $("my-programs").innerHTML = ""; return; }
+  try {
+    const data = await OT.get("/api/contracts/mine");
+    const rows = data.contracts || [];
+    $("my-programs").innerHTML =
+      `<h3 style="margin:.2rem 0 .35rem">My programs (${OT.fmtInt(data.count)})</h3>` +
+      OT.table(rows, [
+        { label: "name", render: row => `<b>${OT.esc(row.name)}</b>` },
+        { label: "kind", render: row => OT.badge(row.kind || "contract") },
+        { label: "status", render: row => OT.badge(row.status) },
+        { label: "source sha3", cls: "mono", render: row =>
+            OT.esc(OT.short(row.source_sha3 || "", 10)) },
+        { label: "", render: row =>
+            `<button class="btn ghost small" data-program="${OT.esc(row.id)}">manage</button>` },
+      ], "no programs yet — deploy one from the App builders page");
+  } catch (_) { $("my-programs").innerHTML = ""; }
+}
+
+/* ---------------------------------------------------------------- receive */
+async function loadReceive(name) {
+  $("receive").innerHTML = `<span class="spinner"></span> building the receive panel…`;
+  try {
+    const data = await OT.get(`/api/wallets/${encodeURIComponent(name)}/receive`);
+    $("receive").innerHTML = `<h3 style="margin:.2rem 0 .4rem">Receive TOR &amp; tokens</h3>` +
+      `<div class="qr-grid">
+        <figure><img src="${data.qr.address.svg}" alt="address QR code">
+          <figcaption>address · QR v${data.qr.address.version}
+            (${OT.esc(data.qr.address.error_correction)})</figcaption></figure>
+        <figure><img src="${data.qr.pubkey.svg}" alt="public key QR code">
+          <figcaption>public key · QR v${data.qr.pubkey.version}
+            (${OT.esc(data.qr.pubkey.error_correction)})</figcaption></figure>
+      </div>` + OT.kv([
+        ["address", `<span class="mono">${OT.esc(data.address)}</span>
+          <button class="btn ghost small" data-copy="${OT.esc(data.address)}">copy</button>`],
+        ["public key (base58)", `<span class="mono">${OT.esc(data.pubkey_base58)}</span>
+          <button class="btn ghost small" data-copy="${OT.esc(data.pubkey_base58)}">copy</button>`],
+        ["public key (hex)", `<span class="hexline">${OT.esc(data.pubkey_hex)}</span>`],
+        ["chain", OT.esc(data.chain_id)],
+      ]) + `<p class="tiny" style="margin-top:.5rem">${OT.esc(data.how)}</p>`;
+  } catch (problem) {
+    $("receive").innerHTML = `<span class="badge bad">${OT.esc(problem.code)}</span>
+      <span class="tiny">${OT.esc(problem.message)}</span>`;
+  }
+}
+
+/* ---------------------------------------------------------------- history */
+function renderHistoryDetail(txid) {
+  const row = historyRows[txid];
+  if (!row) return;
+  $("history-detail").innerHTML = `<div class="panel" style="border-color:var(--line-hot)">
+    <div class="row"><h3 style="margin:0">${OT.esc(row.kind)} · ${OT.esc(row.direction)}</h3>
+      <div class="spacer"></div>
+      <button class="btn ghost small" id="hex-close">close</button></div>` +
+    OT.kv([
+      ["txid (hex)", `<span class="hexline">${OT.esc(row.txid_hex)}</span>`],
+      ["signature (hex)", `<span class="hexline">${OT.esc(row.signature_hex || "—")}</span>`],
+      ["signature (base58)", `<span class="hexline">${OT.esc(row.signature || "—")}</span>`],
+      ["block hash (hex)", `<span class="hexline">${OT.esc(row.block_hash_hex || "—")}</span>`],
+      ["height / seq", `${OT.esc(row.height)} / ${OT.esc(row.seq)}`],
+      ["from", `<span class="hexline">${OT.esc(row.from)}</span>`],
+      ["to", `<span class="hexline">${OT.esc(row.to)}</span>`],
+      ["amount", row.token ? `${OT.fmtInt(row.amount)} ${OT.esc(row.token)}`
+                           : `${OT.fmtTor(row.amount)} TOR`],
+      ["platform fee", `${OT.fmtTor(row.fee_micro)} TOR`],
+      ["note", OT.esc(row.note || "—")],
+      ["time", OT.esc(OT.when(row.timestamp))],
+      ["privacy", `${OT.esc(row.privacy)} — on chain as ${OT.esc(row.on_chain_from)}`],
+      ["receiver on chain", `<span class="hexline">${OT.esc(row.on_chain_to)}</span>`],
+    ]) + `</div>`;
+  const close = $("hex-close");
+  if (close) close.addEventListener("click", () => { $("history-detail").innerHTML = ""; });
+}
+
+async function loadHistory(name) {
+  if (!name) { $("history").innerHTML = "pick a wallet to read its transactions"; return; }
+  $("history").innerHTML = `<span class="spinner"></span> reading every record…`;
+  try {
+    const data = await OT.get(`/api/wallets/${encodeURIComponent(name)}/history?limit=2000`);
+    historyRows = {};
+    (data.records || []).forEach(row => { historyRows[row.txid] = row; });
+    const totals = data.totals || {};
+    const tokenLines = Object.entries(totals.tokens || {}).map(([symbol, bucket]) =>
+      `${symbol} in ${OT.fmtInt(bucket.in)} / out ${OT.fmtInt(bucket.out)}`).join(" · ");
+    $("history-window").textContent = "every record · nothing expires";
+    $("history-summary").innerHTML =
+      `<b>${OT.fmtInt(data.count)}</b> transaction(s) of ${OT.fmtInt(data.scanned)} scanned · ` +
+      `in <b>${OT.fmtTor(Number(totals.in_tor) * 1e8)} TOR</b> · ` +
+      `out <b>${OT.fmtTor(Number(totals.out_tor) * 1e8)} TOR</b> · ` +
+      `fees <b>${OT.fmtTor(Number(totals.fee_tor) * 1e8)} TOR</b>` +
+      (tokenLines ? ` · ${OT.esc(tokenLines)}` : "") +
+      (data.truncated ? ` · <span class="badge warn">scan limit reached</span>` : "");
+    $("history").innerHTML = OT.table(data.records || [], [
+      { label: "time", render: row => OT.esc(OT.when(row.timestamp)) },
+      { label: "dir", render: row =>
+          `<span class="dir-${row.direction}">${row.direction}</span>` },
+      { label: "kind", render: row => OT.badge(row.kind) },
+      { label: "privacy", render: row => row.anonymous
+          ? `<span class="badge violet" title="on chain as ${OT.esc(row.on_chain_from)}">anonymous</span>`
+          : `<span class="badge" title="this address is on chain">public</span>` },
+      { label: "amount", cls: "mono", render: row => row.token
+          ? `${OT.fmtInt(row.amount)} ${OT.esc(row.token)}`
+          : `${OT.fmtTor(row.amount)} TOR` },
+      { label: "fee", cls: "mono", render: row => OT.fmtTor(row.fee_micro) },
+      { label: "counterparty", cls: "mono", render: row => {
+          const other = row.direction === "in" ? row.from : row.to;
+          return `<span title="${OT.esc(other)}">${OT.esc(OT.short(other, 7))}</span>`;
+        } },
+      { label: "txid hex", cls: "mono", render: row =>
+          `<span title="${OT.esc(row.txid_hex)}">${OT.esc(OT.short(row.txid_hex, 8))}</span>` },
+      { label: "", render: row =>
+          `<button class="btn ghost small" data-hex="${OT.esc(row.txid)}">hex</button>` },
+    ], "no transactions yet");
+  } catch (problem) {
+    $("history").innerHTML = `<span class="badge bad">${OT.esc(problem.code)}</span>
+      <span class="tiny">${OT.esc(problem.message)}</span>`;
+  }
+}
+
+async function loadSession(silent = false) {
+  if (!OT.walletSession()) {
+    session = null;
+    selected = null;
+    selectedWallet = null;
+    $("account-state").className = "badge info";
+    $("account-state").textContent = "signed out";
+    $("session-balance").innerHTML = "";
+    $("session-view").innerHTML = "not signed in — create an account or sign in above";
+    $("my-programs").innerHTML = "";
+    $("wallets").innerHTML = `<div class="empty">sign in above — signup generates your
+      Ed25519 wallet, then every login fetches that same wallet back</div>`;
+    $("nfts").innerHTML = `<div class="empty">sign in to see the AI-NFTs minted to your
+      wallet</div>`;
+    $("detail").innerHTML = `<span class="muted tiny">sign in to load your wallet</span>`;
+    $("receive").innerHTML = "";
+    $("history").innerHTML = "sign in to read your transactions";
+    fill($("from"), []);
+    OT.fillWalletSelect($("export-wallet"), [], "");
+    renderTokens();
+    return null;
+  }
+  try {
+    const data = await OT.get("/api/auth/me");
+    session = data;
+    renderSession(data);
+    const rows = (data.wallets && data.wallets.length)
+      ? data.wallets : [data.wallet || {}];
+    renderWallets(rows.filter(row => row && row.name));
+    const preferred = selected
+      || ((rows.find(row => row && row.name === OT.walletName()) || {}).name)
+      || (data.wallet || {}).name;
+    if (preferred && (!silent || selected !== preferred)) await select(preferred);
+    loadMyPrograms();
+    return data;
+  } catch (problem) {
+    OT.setWalletSession("", "");
+    session = null;
+    $("session-view").innerHTML =
+      `<span class="badge bad">${OT.esc(problem.message)}</span> — sign in again`;
+    $("my-programs").innerHTML = "";
+    return null;
+  }
+}
+
+async function doSignup() {
+  const username = $("signup-user").value.trim();
+  const password = $("signup-pass").value;
+  if (!username || !password) { OT.toast("username and password are required", "bad"); return; }
+  $("signup-out").innerHTML = `<span class="spinner"></span> generating a real Ed25519 wallet…`;
+  try {
+    const data = await OT.post("/api/auth/signup", { username, password });
+    OT.setWalletSession(data.session.session, data.session.wallet);
+    $("one-time").innerHTML = oneTimeKey(data.one_time);
+    $("signup-out").innerHTML = `<span class="badge ok">account created</span>`;
+    $("signup-pass").value = "";
+    $("login-user").value = data.account.username;
+    await loadMyWallet();
+  } catch (problem) {
+    $("signup-out").innerHTML = `<span class="badge bad">${OT.esc(problem.code)}</span>
+      <span class="tiny">${OT.esc(problem.message)}</span>`;
+  }
+}
+
+async function doLogin() {
+  const username = $("login-user").value.trim();
+  const password = $("login-pass").value;
+  if (!username || !password) { OT.toast("username and password are required", "bad"); return; }
+  $("login-out").innerHTML = `<span class="spinner"></span> signing in…`;
+  try {
+    const data = await OT.post("/api/auth/login", { username, password });
+    OT.setWalletSession(data.session.session, data.session.wallet);
+    $("login-out").innerHTML = `<span class="badge ok">signed in</span>`;
+    $("login-pass").value = "";
+    $("one-time").innerHTML = "";
+    await loadMyWallet();
+  } catch (problem) {
+    $("login-out").innerHTML = `<span class="badge bad">${OT.esc(problem.code)}</span>
+      <span class="tiny">${OT.esc(problem.message)}</span>`;
+  }
+}
+
+async function doLogout() {
+  try { await OT.post("/api/auth/logout", {}); } catch (_) { /* already gone */ }
+  OT.setWalletSession("", "");
+  $("one-time").innerHTML = "";
+  await loadSession();
+}
+
+function fill(select, wallets) {
+  if (!select) return;
+  select.innerHTML = wallets.map(wallet =>
+    `<option value="${OT.esc(wallet.name)}">${OT.esc(wallet.name)} — ${OT.fmtTor(wallet.balance)} TOR</option>`
+  ).join("") || `<option value="">sign in at /wallet</option>`;
+  select.disabled = wallets.length === 0;
+}
+
+/* ------------------------------------------------------- add / export keys */
+function savedKeyPanel(data) {
+  const key = String(data.secret_key_base58 || "");
+  const words = String(data.mnemonic || "");
+  return `<div class="panel" style="border-color:var(--bad,#ff5c7a)">
+    <h3 style="margin:0 0 .35rem">SAFELY SAVE YOUR PRIVATE KEY</h3>
+    <p class="tiny">${OT.esc(data.warning || "This key controls the wallet.")}</p>
+    ${OT.kv([
+      ["wallet", `<b>${OT.esc(data.name)}</b>`],
+      ["address", `<span class="mono">${OT.esc(data.address)}</span>`],
+      ["public key", `<span class="mono">${OT.esc(data.pubkey_base58 || "")}</span>`],
+      ["exported", OT.esc(OT.when(data.exported_at))],
+    ])}
+    <label style="margin-top:.5rem">private key (base58)</label>
+    <pre class="code">${OT.esc(key)}</pre>
+    <button class="btn small" data-copy="${OT.esc(key)}">copy private key</button>
+    ${words ? `<label style="margin-top:.5rem">recovery words</label>
+      <pre class="code">${OT.esc(words)}</pre>
+      <button class="btn ghost small" data-copy="${OT.esc(words)}">copy words</button>`
+      : `<p class="tiny muted">this imported keystore was created from a private key, so it has no recovery words</p>`}
+    <p class="tiny" style="margin-top:.5rem">Write the key on paper or store it in an
+      offline password manager. Never paste it into a chat or a website.</p>
+  </div>`;
+}
+
+async function addWallet(generate) {
+  const password = $("add-pass").value;
+  if (!password) { OT.toast("the account password is required", "bad"); return; }
+  const label = $("add-label").value.trim();
+  const body = { password, label };
+  if (!generate) {
+    const raw = $("import-key").value.trim();
+    if (!raw) { OT.toast("paste a private key or a recovery phrase", "bad"); return; }
+    if (raw.split(/\s+/).length >= 12) body.mnemonic = raw;
+    else body.secret_key_base58 = raw;
+  }
+  $("add-out").innerHTML = `<span class="spinner"></span> ${generate
+    ? "generating a real Ed25519 wallet…" : "deriving the address from your key…"}`;
+  try {
+    const data = generate
+      ? await OT.post("/api/auth/wallets", body)
+      : await OT.post("/api/auth/wallets/import", body);
+    $("add-out").innerHTML = `<span class="badge ok">${data.imported ? "imported" : "generated"}</span>` +
+      OT.kv([
+        ["wallet", `<b>${OT.esc(data.wallet.name)}</b>`],
+        ["address", `<span class="mono">${OT.esc(data.wallet.address)}</span>`],
+        ["wallets", `${data.wallets.length} / ${data.max_wallets}`],
+        ["origin", OT.esc((data.wallet.meta || {}).origin || "generated")],
+      ]) + (data.one_time ? oneTimeKey(data.one_time) : `<p class="tiny">${OT.esc(data.note || "")}</p>`);
+    $("add-pass").value = "";
+    $("add-label").value = "";
+    $("import-key").value = "";
+    await loadMyWallet();
+    await select(data.wallet.name);
+  } catch (problem) {
+    $("add-out").innerHTML = `<span class="badge bad">${OT.esc(problem.code)}</span>
+      <span class="tiny">${OT.esc(problem.message)}</span>`;
+  }
+}
+
+async function exportKey() {
+  const name = $("export-wallet").value;
+  const password = $("export-pass").value;
+  if (!name) { OT.toast("pick a wallet", "bad"); return; }
+  if (!password) { OT.toast("the account password is required", "bad"); return; }
+  $("export-out").innerHTML = `<span class="spinner"></span> checking the password…`;
+  try {
+    const data = await OT.post(
+      `/api/auth/wallets/${encodeURIComponent(name)}/export`, { password });
+    $("export-pass").value = "";
+    $("export-out").innerHTML = savedKeyPanel(data);
+  } catch (problem) {
+    $("export-out").innerHTML = `<span class="badge bad">${OT.esc(problem.code)}</span>
+      <span class="tiny">${OT.esc(problem.message)}</span>`;
+  }
+}
+
+/* Every wallet the account owns; clicking a row opens its panels. */
+function renderWallets(rows) {
+  wallets = rows || [];
+  $("wallets").innerHTML = OT.table(wallets, [
+    { label: "wallet", render: row => `<b>${OT.esc(row.name)}</b>` +
+        (row.primary ? ` <span class="badge ok">primary</span>` : "") +
+        ((row.meta || {}).label ? `<div class="tiny muted">${OT.esc(row.meta.label)}</div>` : "") },
+    { label: "address", cls: "mono", render: row =>
+        `<span title="${OT.esc(row.address)}">${OT.esc(OT.short(row.address, 10))}</span>
+         <button class="btn ghost small" data-copy="${OT.esc(row.address)}">copy</button>` },
+    { label: "balance", cls: "mono", render: row =>
+        `${OT.fmtTor(row.balance)} TOR` },
+    { label: "tokens", cls: "mono", render: row =>
+        OT.esc(Object.entries(row.tokens || {}).map(([k, v]) => `${k}:${v}`).join(" ") || "—") },
+    { label: "origin", render: row => OT.badge((row.meta || {}).origin || "generated") },
+    { label: "", render: row =>
+        `<button class="btn ghost small" data-wallet="${OT.esc(row.name)}">open</button>
+         ${row.primary ? "" : `<button class="btn ghost small" data-primary="${OT.esc(row.name)}">make primary</button>`}` },
+  ], "no wallet in this session");
+  OT.fillWalletSelect($("from"), wallets, selected);
+  OT.fillWalletSelect($("export-wallet"), wallets, selected);
+}
+
+async function loadMyWallet() {
+  /* re-read the account wallet after signup, login, a send or a refresh */
+  await loadSession();
+}
+
+async function select(name) {
+  selected = name;
+  $("from").value = name;
+  OT.fillWalletSelect($("export-wallet"), wallets, name);
+  await refreshWallet(name, { withPanels: true });
+}
+
+async function refreshWallet(name, { withPanels = false } = {}) {
+  try {
+    const wallet = await OT.get(`/api/wallets/${encodeURIComponent(name)}`);
+    selectedWallet = wallet;
+    $("detail").innerHTML = balanceCard(wallet) + OT.kv([
+      ["name", `<b>${OT.esc(wallet.name)}</b>`],
+      ["address", `${OT.esc(wallet.address)}
+        <button class="btn ghost small" data-copy="${OT.esc(wallet.address)}">copy</button>`],
+      ["pubkey", OT.esc(wallet.pubkey_base58 || "—")],
+      ["balance", `${OT.fmtTor(wallet.balance)} TOR
+        <span class="muted tiny">(${OT.fmtInt(wallet.balance)} microTOR)</span>`],
+      ["nonce", OT.esc(wallet.nonce)],
+      ["tokens", OT.esc(JSON.stringify(wallet.tokens || {}))],
+    ]);
+    renderTokens();
+    $("detail-at").textContent = `updated ${new Date().toLocaleTimeString()}`;
+    if (withPanels) {
+      loadReceive(name);
+      loadHistory(name);
+      loadNfts(wallet);
+    }
+  } catch (problem) {
+    $("detail").innerHTML = `<span class="badge bad">${OT.esc(problem.message)}</span>`;
+  }
+}
+
+/* ---------------------------------------------------------------- AI-NFTs */
+function nftCard(row) {
+  const image = row.image
+    ? `<img src="${OT.esc(row.image)}" alt="${OT.esc(row.name || "NFT")}"
+         style="width:100%;max-height:170px;object-fit:cover;border-radius:12px;border:1px solid var(--line)">`
+    : `<div class="empty">no image</div>`;
+  return `<div class="panel tight">
+    ${image}
+    <div class="row" style="margin-top:.5rem;justify-content:space-between">
+      <b>${OT.esc(row.name || "unnamed")}</b>
+      <span class="badge info">#${OT.esc(row.token_id || "—")}</span>
+    </div>
+    <div class="tiny muted" style="margin:.3rem 0">${OT.esc(row.symbol || "NFT")} ·
+      ${OT.esc(OT.when(row.created_at || row.created_unix))}</div>
+    <div class="tiny" style="max-height:66px;overflow:auto">${OT.esc(row.description || "")}</div>
+    <div class="row" style="margin-top:.4rem">
+      <button class="btn ghost small" data-copy="${OT.esc(row.address || "")}">copy address</button>
+      <a class="btn ghost small" href="/nft">open studio</a>
+    </div>
+  </div>`;
+}
+
+async function loadNfts(wallet) {
+  const row = wallet || (session && session.wallet) || {};
+  const address = String(row.address || "");
+  if (!address) { $("nfts").innerHTML = ""; return; }
+  $("nfts").innerHTML = `<span class="spinner"></span> reading the catalogue…`;
+  try {
+    const data = await OT.get("/api/nft/catalogue?limit=200");
+    const mine = (data.nfts || []).filter(item =>
+      String(item.owner || "") === address || String(item.wallet || "") === String(row.name || ""));
+    $("nfts").innerHTML = mine.length
+      ? mine.slice(0, 6).map(nftCard).join("")
+      : `<div class="empty">nothing minted to ${OT.esc(OT.short(address, 8))} yet —
+           the first 3 TOR mint appears here</div>`;
+  } catch (problem) {
+    $("nfts").innerHTML = `<span class="badge bad">${OT.esc(problem.code)}</span>
+      <span class="tiny">${OT.esc(problem.message)}</span>`;
+  }
+}
+
+async function send(signOnly) {
+  const name = $("from").value;
+  if (!name) { OT.toast("no wallet selected", "bad"); return; }
+  const token = $("token").value;
+  const amount = Number($("amount").value || 0);
+  const picked = document.querySelector('input[name="privacy"]:checked');
+  const body = { to: $("to").value.trim(), note: $("note").value,
+                 privacy: picked ? picked.value : "public" };
+  if (token) {
+    body.token = token;
+    body.amount_token = amount;
+  } else {
+    body.amount = amount;
+  }
+  if (!body.to) { OT.toast("destination address is required", "bad"); return; }
+  $("send-out").innerHTML =
+    `<span class="spinner"></span> ${signOnly ? "signing" : "signing + broadcasting"}` +
+    ` (${body.privacy})…`;
+  try {
+    const path = signOnly
+      ? `/api/wallets/${encodeURIComponent(name)}/sign`
+      : `/api/wallets/${encodeURIComponent(name)}/send`;
+    const data = await OT.post(path, signOnly ? { ...body, kind: "transfer" } : body);
+    if (signOnly) {
+      $("send-out").innerHTML = `<span class="badge ok">signed</span>` +
+        `<p class="tiny">${OT.esc(data.message)}</p>` +
+        OT.kv([["privacy", OT.esc(data.privacy)],
+               ["on chain as", `<span class="mono">${OT.esc(data.on_chain_from)}</span>`,
+                "the ref travels inside signed_tx"]]) + OT.json(data.signed_tx);
+    } else {
+      $("send-out").innerHTML = `<span class="badge ok">broadcast</span>` + OT.kv([
+        ["txid", `<span class="mono">${OT.esc(data.txid)}</span>`],
+        ["height", OT.esc(data.height)],
+        ["from", OT.esc(data.from)],
+        ["privacy", OT.esc(data.privacy)],
+        ["on chain as", `<span class="mono">${OT.esc(data.on_chain_from)}</span>`],
+        ["to", OT.esc(data.to)],
+        ["amount", data.token
+          ? `${OT.fmtInt(data.amount_micro)} ${OT.esc(data.token)}`
+          : `${OT.fmtTor(data.amount_micro)} TOR`],
+        ["new balance", `${OT.fmtTor(data.balance)} TOR`],
+      ]);
+      loadMyWallet();
+    }
+  } catch (problem) {
+    $("send-out").innerHTML = `<span class="badge bad">${OT.esc(problem.code)}</span>
+      <span class="tiny">${OT.esc(problem.message)}</span>`;
+  }
+}
+
+$("wallets").addEventListener("click", async event => {
+  const open = event.target.closest("button[data-wallet]");
+  if (open) { await select(open.dataset.wallet); return; }
+  const primary = event.target.closest("button[data-primary]");
+  if (!primary) return;
+  try {
+    await OT.post(`/api/auth/wallets/${encodeURIComponent(primary.dataset.primary)}/primary`, {});
+    OT.toast(`${primary.dataset.primary} is now the primary wallet`, "ok");
+    await loadMyWallet();
+  } catch (problem) {
+    OT.toast(`${problem.code}: ${problem.message}`, "bad");
+  }
+});
+document.addEventListener("click", event => {
+  const button = event.target.closest("[data-copy]");
+  if (button) OT.copy(button.dataset.copy);
+});
+document.addEventListener("click", async event => {
+  const button = event.target.closest("[data-program]");
+  if (!button) return;
+  try {
+    const data = await OT.post(
+      `/api/contracts/${encodeURIComponent(button.dataset.program)}/call`,
+      { function: "status" });
+    OT.toast(`${button.dataset.program}: status → ${JSON.stringify(data.result)}`, "ok");
+  } catch (problem) {
+    OT.toast(`${problem.code}: ${problem.message}`, "bad");
+  }
+});
+$("reload").addEventListener("click", loadMyWallet);
+$("token").addEventListener("change", labelAmount);
+$("tokens-reload").addEventListener("click", loadRegistry);
+$("history-reload").addEventListener("click", () => { if (selected) loadHistory(selected); });
+$("history").addEventListener("click", event => {
+  const button = event.target.closest("button[data-hex]");
+  if (button) renderHistoryDetail(button.dataset.hex);
+});
+$("signup-run").addEventListener("click", doSignup);
+$("login-run").addEventListener("click", doLogin);
+$("logout-run").addEventListener("click", doLogout);
+$("generate-wallet").addEventListener("click", () => addWallet(true));
+$("import-wallet").addEventListener("click", () => addWallet(false));
+$("export-key").addEventListener("click", exportKey);
+$("session-reload").addEventListener("click", loadSession);
+$("send").addEventListener("click", () => send(false));
+$("sign").addEventListener("click", () => send(true));
+$("nfts-reload").addEventListener("click", () => {
+  if (session && session.wallet) loadNfts(session.wallet);
+  else OT.toast("sign in first — your AI-NFTs belong to your wallet", "bad");
+});
+async function tick() {
+  if (document.hidden) return;
+  if (OT.walletSession()) await loadSession(true);
+  if (selected) await refreshWallet(selected);
+}
+
+document.addEventListener("DOMContentLoaded", async () => {
+  await loadRegistry();
+  await loadMyWallet();
+
+  setInterval(tick, 15000);
+  try {
+    const support = await OT.get("/api/auth/support");
+    $("session-support").innerHTML =
+      `support: <a href="mailto:${OT.esc(support.email)}">${OT.esc(support.email)}</a>`;
+  } catch (_) { /* the footer still shows the page */ }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,333 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <div class="row">
+    <div>
+      <div class="eyebrow">one registry · every endpoint</div>
+      <h2 style="margin:0">API &amp; fetch-data tool</h2>
+      <p class="tiny" style="margin:.3rem 0 0">
+        Every endpoint below is real. “Try it” performs the HTTP request through
+        <code>POST /api/tools/fetch</code> — the same call the Ollama brain makes — and shows
+        the exact request and response.
+      </p>
+    </div>
+    <div class="spacer"></div>
+    <input id="filter" placeholder="filter by name, path, group…" style="max-width:260px">
+    <a class="btn ghost small" href="/api/docs" target="_blank" rel="noopener">raw catalog</a>
+    <a class="btn ghost small" href="/api/openapi.json" target="_blank" rel="noopener">OpenAPI</a>
+  </div>
+  <div class="row" style="margin-top:.7rem" id="meta"></div>
+  <div class="row" id="base-bar" style="margin-top:.55rem;display:none">
+    <span class="tiny muted">base URL</span>
+    <code id="base-url" class="mono" style="padding:.15rem .45rem;border-radius:6px;background:rgba(255,255,255,.07)"></code>
+    <button class="btn ghost small" id="copy-base" type="button">copy</button>
+    <span class="tiny muted" id="base-source"></span>
+    <a class="badge info" id="base-onion" href="#" target="_blank" rel="noopener" hidden></a>
+    <span class="badge" id="base-listen" hidden></span>
+  </div>
+</section>
+
+<section class="panel" id="dev-keys">
+  <div class="row">
+    <div>
+      <div class="eyebrow">developers · bought in TOR · sent as x-api-key</div>
+      <h2 style="margin:0">Developer API keys</h2>
+      <p class="tiny" style="margin:.3rem 0 0">
+        The versioned developer API lives at <code>/api/v1/&lt;endpoint&gt;</code> and
+        <b>requires a key</b>: <code>curl -H "x-api-key: otd_…"
+        /api/v1/chain.info</code>. Keys are paid from your own wallet on-chain and
+        expire; the key itself is shown once. The website you are reading uses your
+        wallet session instead — no key needed there.
+      </p>
+      <p class="tiny" style="margin:.3rem 0 0">
+        Metadata lives on IPFS:
+        <a href="/api/ipfs/status" target="_blank" rel="noopener">/api/ipfs/status</a> ·
+        <a href="/api/ipfs/resolve?uri=ipfs://bafybeihur4eo7oifxqahw7ze3o6ujvy7ltfmzmfkiq46j33jzwurl2w3ze"
+           target="_blank" rel="noopener">/api/ipfs/resolve</a> ·
+        <code>/api/ipfs/pin</code> (admin + Pinata).
+      </p>
+    </div>
+    <div class="spacer"></div>
+    <span class="badge" id="key-price">reading the price…</span>
+  </div>
+  <div class="grid g2" style="gap:.8rem;margin-top:.7rem">
+    <div>
+      <div class="field"><label for="key-label">what is it for</label>
+        <input id="key-label" placeholder="my trading bot"></div>
+      <div class="field"><label for="key-days">days (1–365)</label>
+        <input id="key-days" type="number" value="30" min="1" max="365"></div>
+      <button class="btn lime small" id="key-buy">buy a key from my wallet</button>
+      <p class="tiny" style="margin:.4rem 0 0" id="key-signin">
+        <a href="/wallet">Sign in</a> to buy a key and see the ones you own.
+      </p>
+      <div id="key-out" style="margin-top:.6rem"></div>
+    </div>
+    <div>
+      <div class="row"><h3 style="margin:0">Your keys</h3>
+        <div class="spacer"></div>
+        <button class="btn ghost small" id="keys-reload">reload</button></div>
+      <div id="keys" style="margin-top:.5rem"></div>
+      <label style="margin-top:.5rem">call it like this</label>
+      <pre class="code" id="key-example">curl -H "x-api-key: otd_…" \
+  BASE/api/v1/chain.info</pre>
+    </div>
+  </div>
+</section>
+
+<section class="docs-shell">
+  <aside class="docs-nav" id="groups"></aside>
+  <div id="endpoints">loading the catalog…</div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const $ = id => document.getElementById(id);
+let catalog = { endpoints: [], groups: [] };
+let group = "";
+
+function renderGroups() {
+  const total = catalog.endpoints.length;
+  $("groups").innerHTML =
+    `<button class="${group === "" ? "active" : ""}" data-group="">all · ${total}</button>` +
+    catalog.groups.map(item =>
+      `<button class="${group === item.name ? "active" : ""}" data-group="${OT.esc(item.name)}">` +
+      `${OT.esc(item.name)} · ${item.count}</button>`).join("");
+}
+
+function paramInput(endpoint, param, index) {
+  const id = `p-${endpoint.name}-${index}`.replace(/[^\w-]/g, "-");
+  const label = `${param.name}${param.required ? " *" : ""} · ${param.in}`;
+  if (param.type === "bool") {
+    return `<div class="field"><label for="${id}">${OT.esc(label)}</label>
+      <select id="${id}" data-param="${OT.esc(param.name)}" data-type="bool">
+        <option value="">—</option><option value="true">true</option>
+        <option value="false">false</option></select></div>`;
+  }
+  const example = param.example !== undefined
+    ? (typeof param.example === "object" ? JSON.stringify(param.example) : param.example)
+    : "";
+  return `<div class="field"><label for="${id}">${OT.esc(label)}</label>
+    <input id="${id}" data-param="${OT.esc(param.name)}" data-type="${OT.esc(param.type)}"
+      placeholder="${OT.esc(example)}"></div>`;
+}
+
+function render() {
+  const term = $("filter").value.trim().toLowerCase();
+  const rows = catalog.endpoints.filter(entry =>
+    (!group || entry.group === group) &&
+    (!term || `${entry.name} ${entry.path} ${entry.summary} ${entry.group}`
+      .toLowerCase().includes(term)));
+  $("endpoints").innerHTML = rows.map(entry => `
+    <article class="endpoint" data-endpoint="${OT.esc(entry.name)}">
+      <header>
+        <span class="method ${entry.method.toLowerCase()}">${entry.method}</span>
+        <span class="path">${OT.esc(entry.path)}</span>
+        <span class="name">${OT.esc(entry.name)}</span>
+        <span class="badge ${entry.auth === "admin" ? "warn" : "info"}">${OT.esc(entry.auth)}</span>
+        ${entry.cost_tor ? `<span class="badge violet">${entry.cost_tor} TOR</span>` : ""}
+      </header>
+      <p>${OT.esc(entry.summary)}</p>
+      ${entry.url ? `<p class="tiny mono" style="margin:.15rem 0 0;opacity:.8">${OT.esc(entry.url)}</p>` : ""}
+      <p class="tiny mono">→ ${OT.esc(entry.returns)}</p>
+      ${entry.params.length ? `<div class="params">${entry.params.map(param =>
+        `<span>${OT.esc(param.name)}:${OT.esc(param.type)}${param.required ? "*" : ""} (${OT.esc(param.in)})</span>`
+      ).join("")}</div>` : ""}
+      <details style="margin-top:.5rem">
+        <summary class="tiny" style="cursor:pointer">try it</summary>
+        <div class="try">
+          ${entry.params.length ? entry.params.map((param, index) => paramInput(entry, param, index)).join("")
+            : `<div class="tiny muted" style="align-self:center">no parameters</div>`}
+          <button class="btn small" data-send="${OT.esc(entry.name)}">send request</button>
+        </div>
+        <pre class="code" data-output="${OT.esc(entry.name)}" hidden></pre>
+      </details>
+    </article>`).join("") || `<div class="panel empty">nothing matches that filter</div>`;
+}
+
+$("groups").addEventListener("click", event => {
+  const button = event.target.closest("button[data-group]");
+  if (!button) return;
+  group = button.dataset.group;
+  renderGroups();
+  render();
+});
+
+$("filter").addEventListener("input", render);
+
+$("endpoints").addEventListener("click", async event => {
+  const button = event.target.closest("button[data-send]");
+  if (!button) return;
+  const name = button.dataset.send;
+  const article = button.closest("[data-endpoint]");
+  const output = article.querySelector(`[data-output="${CSS.escape(name)}"]`);
+  const params = {};
+  article.querySelectorAll("[data-param]").forEach(field => {
+    const value = field.value.trim();
+    if (value === "") return;
+    params[field.dataset.param] = value;
+  });
+  output.hidden = false;
+  output.classList.remove("bad");
+  output.textContent = `POST /api/tools/fetch {endpoint: "${name}"} …`;
+  try {
+    const data = await OT.post("/api/tools/fetch", { endpoint: name, params });
+    const response = data.response || {};
+    output.textContent =
+      `${data.request.method} ${data.request.url}` +
+      (data.request.body ? `\nbody: ${JSON.stringify(data.request.body, null, 2)}` : "") +
+      `\n\nHTTP ${data.http_status} · ${data.latency_ms}ms\n` +
+      JSON.stringify(response, null, 2);
+    if (!data.ok) output.classList.add("bad");
+  } catch (problem) {
+    output.classList.add("bad");
+    output.textContent = `${problem.code || "ERROR"}: ${problem.message}`;
+  }
+});
+
+/* ------------------------------------------------------- developer API keys */
+let keyPrice = null;
+
+async function loadKeyPricing() {
+  try {
+    const data = await OT.get("/api/dev/keys/pricing");
+    keyPrice = data.pricing || {};
+    const price = keyPrice.price || {};
+    $("key-price").className = "badge ok";
+    $("key-price").textContent =
+      `${price.tor_per_30_days ?? "?"} TOR / 30 days · ` +
+      `${keyPrice.limits?.per_minute ?? "?"}/min · ${keyPrice.limits?.per_day ?? "?"}/day`;
+    $("key-days").max = String(365);
+  } catch (problem) {
+    $("key-price").className = "badge bad";
+    $("key-price").textContent = problem.message;
+  }
+}
+
+function renderKeys(data) {
+  const rows = data.keys || [];
+  $("keys").innerHTML = OT.table(rows, [
+    { label: "hint", cls: "mono", render: row => `<b>${OT.esc(row.hint)}</b>` },
+    { label: "for", render: row => OT.esc(row.label || "—") },
+    { label: "state", render: row => row.active
+        ? `<span class="badge ok">active</span>` : `<span class="badge bad">revoked</span>` },
+    { label: "expires", render: row => OT.esc(OT.when(row.expires_at)) },
+    { label: "calls", cls: "mono", render: row => OT.fmtInt(row.calls) },
+    { label: "", render: row => row.active
+        ? `<button class="btn danger small" data-revoke="${OT.esc(row.id)}">revoke</button>`
+        : "" },
+  ], OT.walletSession()
+      ? "no keys yet — buy one on the left"
+      : "sign in at /wallet to see your keys");
+  if (OT.walletSession()) {
+    $("key-signin").innerHTML =
+      `<span class="badge ok">${rows.length} key(s)</span> ` +
+      `<span class="tiny muted">${OT.fmtInt(data.limits?.per_minute)} calls/min · ` +
+      `${OT.fmtInt(data.limits?.per_day)}/day</span>`;
+  }
+}
+
+async function loadKeys() {
+  if (!OT.walletSession()) {
+    $("keys").innerHTML = `<div class="empty">sign in at <a href="/wallet">/wallet</a> to buy a key</div>`;
+    return;
+  }
+  try {
+    renderKeys(await OT.get("/api/dev/keys"));
+  } catch (problem) {
+    if (problem.status === 403) {
+      $("keys").innerHTML = `<div class="empty">sign in at <a href="/wallet">/wallet</a> to buy a key</div>`;
+      return;
+    }
+    $("keys").innerHTML = `<span class="badge bad">${OT.esc(problem.message)}</span>`;
+  }
+}
+
+async function buyKey() {
+  if (!OT.walletSession()) { OT.toast("sign in at /wallet first", "bad"); return; }
+  const label = $("key-label").value.trim();
+  const days = Number($("key-days").value || 30);
+  $("key-out").innerHTML = `<span class="spinner"></span> charging ${days} days from your wallet…`;
+  try {
+    const data = await OT.post("/api/dev/keys", { label, days });
+    const curl = `curl -H "x-api-key: ${data.key}" \\\n  ${location.origin}/api/v1/chain.info`;
+    $("key-out").innerHTML = `<div class="panel" style="border-color:var(--bad,#ff5c7a)">
+      <h3 style="margin:0 0 .3rem">SAVE THIS KEY NOW — shown once</h3>
+      <p class="tiny">${OT.esc(data.warning)}</p>
+      <pre class="code">${OT.esc(data.key)}</pre>
+      <button class="btn small" data-copy="${OT.esc(data.key)}">copy key</button>
+      ${OT.kv([
+        ["label", OT.esc(data.label)],
+        ["expires", OT.esc(OT.when(data.expires_at))],
+        ["paid", `${OT.esc(data.charge.amount_tor)} TOR · ${OT.esc(data.charge.txid || "")}`],
+        ["limits", `${data.limits.per_minute}/min · ${data.limits.per_day}/day`],
+      ])}
+      <p class="tiny" style="margin-top:.4rem">try it:</p>
+      <pre class="code" id="key-example">${OT.esc(curl)}</pre>
+    </div>`;
+    $("key-label").value = "";
+    await loadKeys();
+  } catch (problem) {
+    $("key-out").innerHTML = `<span class="badge bad">${OT.esc(problem.code)}</span>
+      <span class="tiny">${OT.esc(problem.message)}</span>`;
+  }
+}
+
+$("key-buy").addEventListener("click", buyKey);
+$("keys-reload").addEventListener("click", loadKeys);
+document.addEventListener("click", async event => {
+  const copy = event.target.closest("[data-copy]");
+  if (copy) { OT.copy(copy.dataset.copy); return; }
+  const revoke = event.target.closest("button[data-revoke]");
+  if (!revoke) return;
+  try {
+    await OT.del(`/api/dev/keys/${encodeURIComponent(revoke.dataset.revoke)}`);
+    OT.toast("key revoked — it stops working immediately", "ok");
+    await loadKeys();
+  } catch (problem) {
+    OT.toast(`${problem.code}: ${problem.message}`, "bad");
+  }
+});
+
+document.addEventListener("DOMContentLoaded", async () => {
+  try {
+    const data = await OT.get("/api/docs");
+    catalog = data;
+    const urls = data.base_urls || {};
+    $("meta").innerHTML =
+      `<span class="badge info">${data.count} endpoints</span>` +
+      `<span class="badge">base ${OT.esc(data.base_url)}</span>` +
+      `<span class="badge ${data.node?.reachable ? "ok" : "bad"}">node ` +
+        `${data.node?.reachable ? "reachable" : "down"}</span>` +
+      (data.node?.hint
+        ? `<span class="badge bad" title="${OT.esc(data.node.hint)}">` +
+          `${OT.esc(data.node.hint)}</span>` : "") +
+      `<span class="badge violet">tool ${OT.esc(data.tool)}</span>` +
+      (data.node?.chain ? `<span class="badge">height ${OT.esc(data.node.chain.height)}</span>` : "");
+
+    $("base-bar").style.display = "";
+    $("base-url").textContent = data.base_url;
+    $("base-source").textContent = urls.source ? `· ${urls.source}` : "";
+    if (urls.onion) {
+      const onion = $("base-onion");
+      onion.hidden = false;
+      onion.textContent = `onion ${urls.onion}`;
+      onion.href = `${urls.onion}/docs`;
+    }
+    if (urls.listen && urls.listen !== data.base_url) {
+      const listen = $("base-listen");
+      listen.hidden = false;
+      listen.textContent = `this process listens on ${urls.listen}`;
+    }
+    $("copy-base").addEventListener("click", () => OT.copy(data.base_url));
+
+    renderGroups();
+    render();
+    loadKeyPricing();
+    loadKeys();
+  } catch (problem) {
+    $("endpoints").innerHTML = `<div class="panel"><span class="badge bad">${OT.esc(problem.message)}</span></div>`;
+  }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,432 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <div class="row">
+    <div>
+      <div class="eyebrow">ai-nft studio · ollama · 3 TOR per mint</div>
+      <h2 style="margin:0">AI-NFT Studio</h2>
+      <p class="tiny" style="margin:.3rem 0 0">
+        Mint a 1-of-1 for <b>3 TOR</b> (charged on-chain), or load any existing token:
+        a OneNess TOR NFT from this node, a Solana Metaplex mint, or a metadata URI. The
+        resolved metadata is injected into the model's system prompt immediately after the
+        hardcoded <code>I AM THIS NFT</code> header, then the chat speaks as the token.
+      </p>
+    </div>
+    <div class="spacer"></div>
+    <span class="badge ok">3 TOR mint</span>
+    <span class="badge info">solana + tor</span>
+    <span class="badge violet">live metadata</span>
+  </div>
+  <div class="grid g4" style="margin-top:.9rem">
+    <div class="stat"><div class="k">minted here</div><div class="v" id="stat-count">…</div>
+      <div class="s">/api/nft/catalogue</div></div>
+    <div class="stat magenta"><div class="k">mint price</div><div class="v" id="stat-price">3 TOR</div>
+      <div class="s">nft_mint, on-chain</div></div>
+    <div class="stat lime"><div class="k">loaded source</div><div class="v" id="stat-source">—</div>
+      <div class="s">oneness-tor / solana / uri</div></div>
+    <div class="stat gold"><div class="k">prompt field</div><div class="v" id="stat-prompt">0</div>
+      <div class="s">characters of NFT block</div></div>
+  </div>
+</section>
+
+<section class="grid g2">
+  <div class="panel">
+    <h2><span class="dot"></span>Mint a 1-of-1 <span class="badge warn">3 TOR</span></h2>
+    <div class="grid g2" style="gap:.5rem">
+      <div class="field"><label for="mint-name">name</label>
+        <input id="mint-name" placeholder="Cyan Warden"></div>
+      <div class="field"><label for="mint-symbol">symbol</label>
+        <input id="mint-symbol" placeholder="WARDEN" maxlength="10" value="AINFT"></div>
+    </div>
+    <label for="mint-description">description — this becomes the AI persona</label>
+    <textarea id="mint-description" style="min-height:92px"
+      placeholder="A cyan-lit warden of the onion relays. Speaks in short, calm warnings and remembers every node it has guarded."></textarea>
+    <label for="mint-image">image URL</label>
+    <input id="mint-image" placeholder="https://… / ipfs://… / data:image/png;base64,…">
+    <div class="grid g2" style="gap:.5rem">
+      <div class="field"><label for="mint-attributes">traits (one per line)</label>
+        <textarea id="mint-attributes" style="min-height:66px"
+          placeholder="Aura: cyan&#10;Eyes: nine&#10;Origin: onion relay"></textarea></div>
+      <div class="field"><label for="mint-wallet">pay from</label><select id="mint-wallet"></select>
+        <label for="mint-external">external link (optional)</label>
+        <input id="mint-external" placeholder="https://…"></div>
+    </div>
+    <div class="row" style="margin-top:.6rem">
+      <button class="btn" id="mint">mint on chain</button>
+      <span class="tiny muted" id="mint-status"></span>
+    </div>
+    <div id="mint-out" style="margin-top:.6rem"></div>
+  </div>
+
+  <div class="panel">
+    <div class="row">
+      <h2 style="margin:0"><span class="dot"></span>Catalogue</h2>
+      <div class="spacer"></div>
+      <button class="btn ghost small" id="refresh">refresh</button>
+    </div>
+    <div id="catalogue" style="margin-top:.6rem">loading…</div>
+  </div>
+</section>
+
+<section class="panel">
+  <h2><span class="dot"></span>Load an NFT into the chat</h2>
+  <p class="tiny muted" style="margin:.2rem 0 .5rem">
+    Paste a contract / mint address and a token id. The node resolves the real metadata
+    (local registry → Solana Metaplex RPC → metadata URI), shows it here, and puts it in the
+    system prompt before the model answers.
+  </p>
+  <div class="grid g3" style="gap:.5rem">
+    <div class="field"><label for="nft-address">contract / mint</label>
+      <input id="nft-address" placeholder="TOR1…onion or a Solana mint"></div>
+    <div class="field"><label for="nft-token-id">token id</label>
+      <input id="nft-token-id" placeholder="1" inputmode="numeric"></div>
+    <div class="field" style="align-self:flex-end">
+      <button class="btn" id="load-nft" style="width:100%">load NFT</button>
+    </div>
+  </div>
+  <div class="row" style="margin-top:.4rem">
+    <button class="btn ghost small" id="load-metadata-uri">load metadata URI instead</button>
+    <input id="nft-metadata-uri" placeholder="https://…/metadata.json" style="max-width:320px">
+    <span class="tiny muted" id="load-status"></span>
+  </div>
+  <div id="nft-card" style="margin-top:.8rem"></div>
+</section>
+<section class="panel">
+  <div class="row">
+    <h2 style="margin:0"><span class="dot"></span>AI-NFT chat</h2>
+    <div class="spacer"></div>
+    <span class="badge violet">system prompt: I AM THIS NFT + metadata</span>
+  </div>
+  <div class="deck" style="margin-top:.8rem">
+    <div>
+      <div class="chat" id="chat">
+        <div class="msg assistant"><span class="who">studio</span>
+          Load an NFT above, then talk to it. Every reply comes from the local model and
+          any tool call it makes is shown on the right.</div>
+      </div>
+      <label for="chat-prompt">message</label>
+      <textarea id="chat-prompt" style="min-height:80px"
+        placeholder="Who are you, and what do you guard?"></textarea>
+      <div class="row" style="margin-top:.5rem">
+        <select id="chat-model" style="max-width:220px"></select>
+        <button class="btn" id="send">send</button>
+        <button class="btn ghost small" id="reset-chat">reset</button>
+        <span class="tiny muted" id="chat-status"></span>
+      </div>
+      <div class="voice-bar" style="margin-top:.5rem">
+        <label class="switch"><input type="checkbox" id="voice-on" checked> play response</label>
+        <label class="switch"><input type="checkbox" id="voice-male"> male voice</label>
+        <span class="tiny muted" id="voice-name"></span>
+        <div class="spacer"></div>
+        <button class="btn ghost small" id="voice-record" type="button">● record</button>
+        <span class="tiny muted" id="voice-status"></span>
+      </div>
+    </div>
+    <div>
+      <h3 style="font-size:.78rem;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim)">
+        what the model sees
+      </h3>
+      <pre class="code" id="prompt-block" style="max-height:300px">load an NFT to see the exact block…</pre>
+      <div id="chat-calls" class="tiny muted">no API calls yet</div>
+    </div>
+  </div>
+</section>
+
+<section class="panel">
+  <h2><span class="dot"></span>Live calls</h2>
+  <div id="api-log" class="log" style="max-height:180px"></div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const $ = id => document.getElementById(id);
+let loaded = null;
+let history = [];
+
+/* ------------------------------------------------------------------- audio */
+/* The NFT speaks through the browser: ON/OFF per surface, a male/female
+   switch, and a record button that transcribes into the message box. */
+let recorder = null;
+
+function voiceOn() { return $("voice-on").checked; }
+function voiceGender() { return $("voice-male").checked ? "male" : "female"; }
+
+function stopRecording() {
+  if (recorder) recorder.stop();
+  recorder = null;
+  $("voice-record").classList.remove("rec-on");
+  $("voice-status").textContent = "";
+}
+
+function voiceLabel() {
+  const support = OT.voice.supported();
+  $("voice-name").textContent = support.speech
+    ? `${voiceGender()} · ${OT.voice.voiceName(voiceGender())}`
+    : "no speech synthesis in this browser";
+}
+
+function initVoice() {
+  $("voice-on").checked = OT.voice.enabled("nft-play", true);
+  $("voice-male").checked = OT.voice.enabled("nft-male", false);
+  voiceLabel();
+  if (!OT.voice.supported().recognition) {
+    $("voice-record").disabled = true;
+    $("voice-record").title = "speech recognition needs Chrome or Edge";
+    $("voice-status").textContent = "record needs Chrome or Edge";
+  }
+}
+
+$("voice-on").addEventListener("change", () => {
+  OT.voice.remember("nft-play", $("voice-on").checked);
+  if (!voiceOn()) OT.voice.stop();
+});
+
+$("voice-male").addEventListener("change", () => {
+  OT.voice.remember("nft-male", $("voice-male").checked);
+  voiceLabel();
+  OT.toast(`the NFT now speaks with a ${voiceGender()} voice`, "ok");
+});
+
+$("voice-record").addEventListener("click", () => {
+  if (recorder) { stopRecording(); return; }
+  $("voice-status").textContent = "listening…";
+  $("voice-record").classList.add("rec-on");
+  recorder = OT.voice.listen({
+    onText: text => { $("chat-prompt").value = text; },
+    onEnd: stopRecording,
+    onError: reason => { $("voice-status").textContent = reason; },
+  });
+  if (!recorder) { $("voice-record").classList.remove("rec-on"); $("voice-status").textContent = ""; }
+});
+
+function err(problem) {
+  return `<span class="badge bad">${OT.esc(problem.code || "ERROR")}</span>
+    <span class="tiny">${OT.esc(problem.message)}</span>`;
+}
+function options(select, rows, value, label) {
+  if (!select) return;
+  select.innerHTML = rows.map(row =>
+    `<option value="${OT.esc(row[value])}">${OT.esc(label(row))}</option>`).join("")
+    || `<option value="">nothing available</option>`;
+}
+
+async function wallets() {
+  const list = await OT.myWallets();
+  OT.fillWalletSelect($("mint-wallet"), list);
+  if (!list.length) OT.toast("sign in at /wallet — the 3 TOR mint is paid by your own wallet", "bad");
+}
+
+function traits(nft) {
+  const rows = nft.attributes || [];
+  return rows.length ? rows.map(row => `${row.trait_type}: ${row.value}`).join(" · ") : "—";
+}
+
+function card(nft) {
+  const image = nft.image
+    ? `<img src="${OT.esc(nft.image)}" alt="${OT.esc(nft.name || "NFT")}"
+         style="width:100%;max-height:220px;object-fit:cover;border-radius:12px;border:1px solid var(--line)">`
+    : `<div class="empty">no image</div>`;
+  return `<div class="panel tight">
+    ${image}
+    <div class="row" style="margin-top:.5rem;justify-content:space-between">
+      <b>${OT.esc(nft.name || "unnamed")}</b>
+      <span class="badge info">#${OT.esc(nft.token_id || "—")}</span>
+    </div>
+    <div class="tiny muted" style="margin:.3rem 0">${OT.esc(nft.symbol || "")} ·
+      ${OT.esc(nft.chain || "")} · ${OT.esc(nft.source || "")}</div>
+    <div class="tiny" style="max-height:74px;overflow:auto">${OT.esc(nft.description || "")}</div>
+    <div class="tiny muted" style="margin-top:.35rem">${OT.esc(traits(nft))}</div>
+    <div class="row" style="margin-top:.5rem">
+      <button class="btn ghost small" data-address="${OT.esc(nft.address)}"
+        data-token="${OT.esc(nft.token_id || "")}">load into chat</button>
+      ${nft.external_url ? `<a class="btn ghost small" href="${OT.esc(nft.external_url)}"
+        target="_blank" rel="noopener">external ↗</a>` : ""}
+    </div>
+  </div>`;
+}
+
+async function loadCatalogue() {
+  try {
+    const data = await OT.get("/api/nft/catalogue");
+    $("stat-count").textContent = OT.fmtInt(data.count);
+    $("stat-price").textContent = `${data.price_tor} TOR`;
+    const rows = data.nfts || [];
+    $("catalogue").innerHTML = rows.length
+      ? `<div class="grid g3">${rows.map(row => card({
+          name: row.name, symbol: row.symbol, token_id: row.token_id,
+          description: row.description, image: row.image,
+          attributes: row.attributes, address: row.address,
+          chain: "oneness-tor", source: "oneness-tor",
+          external_url: row.metadata && row.metadata.external_url,
+        })).join("")}</div>`
+      : `<div class="empty">nothing minted here yet — the first 3 TOR mint appears here</div>`;
+  } catch (problem) {
+    $("catalogue").innerHTML = err(problem);
+  }
+}
+
+function parseAttributes(text) {
+  return text.split("\n").map(line => line.trim()).filter(Boolean).map(line => {
+    const index = line.indexOf(":");
+    if (index === -1) return { trait_type: "Trait", value: line };
+    return { trait_type: line.slice(0, index).trim(), value: line.slice(index + 1).trim() };
+  });
+}
+
+async function mint() {
+  const name = $("mint-name").value.trim();
+  const description = $("mint-description").value.trim();
+  const image = $("mint-image").value.trim();
+  if (!name || !description || !image) {
+    OT.toast("name, description and image are required", "bad");
+    return;
+  }
+  $("mint").disabled = true;
+  $("mint-status").innerHTML = `<span class="spinner"></span> signing the 3 TOR mint…`;
+  try {
+    const data = await OT.post("/api/nft/mint", {
+      name, description, image, symbol: $("mint-symbol").value.trim() || "AINFT",
+      attributes: parseAttributes($("mint-attributes").value),
+      external_url: $("mint-external").value.trim(),
+      wallet: $("mint-wallet").value || "founder",
+    });
+    $("mint-out").innerHTML = `<span class="badge ok">minted</span>` + OT.kv([
+      ["token id", `#${OT.esc(data.nft.token_id)}`],
+      ["address", `<span class="mono">${OT.esc(data.nft.address)}</span>`],
+      ["txid", `<span class="mono">${OT.esc(data.txid)}</span>`],
+      ["height", OT.esc(data.height)],
+      ["charged", `${data.charge.amount_tor} TOR`],
+    ]);
+    $("mint-status").textContent = "";
+    await loadCatalogue();
+    await loadNft(data.nft.address, data.nft.token_id);
+  } catch (problem) {
+    $("mint-status").textContent = "";
+    $("mint-out").innerHTML = err(problem);
+  } finally { $("mint").disabled = false; }
+}
+
+async function loadNft(address, tokenId) {
+  const target = String(address || $("nft-address").value || "").trim();
+  const token = String(tokenId !== undefined && tokenId !== null
+    ? tokenId : $("nft-token-id").value || "").trim();
+  const uri = $("nft-metadata-uri").value.trim();
+  if (!target && !uri) {
+    OT.toast("paste a contract/mint or a metadata URI", "bad");
+    return;
+  }
+  $("load-status").innerHTML = `<span class="spinner"></span> resolving metadata…`;
+  try {
+    const query = (!target && uri)
+      ? `metadata_uri=${encodeURIComponent(uri)}`
+      : `address=${encodeURIComponent(target)}&token_id=${encodeURIComponent(token)}`;
+    const data = await OT.get(`/api/nft/metadata?${query}`);
+    loaded = data.nft;
+    history = [];
+    $("nft-address").value = loaded.address || target;
+    $("nft-token-id").value = loaded.token_id || token;
+    $("stat-source").textContent = loaded.source || "—";
+    $("stat-prompt").textContent = OT.fmtInt((data.prompt || "").length);
+    $("prompt-block").textContent = data.prompt || "";
+    $("nft-card").innerHTML = `<div class="grid g2" style="align-items:start">
+      <div>${card(loaded)}</div>
+      <div>${OT.kv([
+        ["name", `<b>${OT.esc(loaded.name || "unnamed")}</b>`],
+        ["symbol", OT.esc(loaded.symbol || "—")],
+        ["chain", OT.esc(loaded.chain || "—")],
+        ["source", OT.esc(loaded.source || "—")],
+        ["contract", `<span class="mono">${OT.esc(loaded.address || "—")}</span>`],
+        ["token id", OT.esc(loaded.token_id ? `#${loaded.token_id}` : "—")],
+        ["metadata uri", loaded.metadata_uri
+          ? `<span class="mono">${OT.esc(loaded.metadata_uri)}</span>` : "—"],
+        ["image", `<a href="${OT.esc(loaded.image || "#")}" target="_blank" rel="noopener">open ↗</a>`],
+        ["traits", OT.esc(traits(loaded))],
+        ["description", OT.esc(loaded.description || "—")],
+      ])}</div>
+    </div>`;
+    $("load-status").textContent = "";
+    $("chat").innerHTML = "";
+    bubble("assistant", `Loaded **${loaded.name || "this NFT"}**`
+      + (loaded.token_id ? ` (#${loaded.token_id})` : "")
+      + ` from ${loaded.source}. Its metadata is now the system prompt field — ask it anything.`,
+      "studio");
+  } catch (problem) {
+    $("load-status").textContent = "";
+    $("nft-card").innerHTML = err(problem);
+  }
+}
+
+function bubble(role, text, who) {
+  const node = document.createElement("div");
+  node.className = `msg ${role}`;
+  node.innerHTML = `<span class="who">${OT.esc(who || role)}</span>`
+    + (role === "assistant" ? OT.md(text) : OT.esc(text));
+  $("chat").appendChild(node);
+  $("chat").scrollTop = $("chat").scrollHeight;
+}
+
+async function send() {
+  if (!loaded) { OT.toast("load an NFT first", "bad"); return; }
+  const prompt = $("chat-prompt").value.trim();
+  if (!prompt) return;
+  bubble("user", prompt, "you");
+  $("chat-prompt").value = "";
+  $("send").disabled = true;
+  $("chat-status").innerHTML = `<span class="spinner"></span> speaking as the token…`;
+  try {
+    const data = await OT.post("/api/nft/chat", {
+      address: loaded.address, token_id: loaded.token_id, prompt,
+      model: $("chat-model").value || undefined,
+      messages: history.slice(-8),
+    });
+    bubble("assistant", data.answer || "(the model returned nothing)",
+           `${data.model || "assistant"} · verified ${data.verified ? "yes" : "no"}`);
+    if (voiceOn()) OT.voice.speak(data.answer || "", { gender: voiceGender() });
+    history.push({ role: "user", content: prompt },
+                 { role: "assistant", content: data.answer || "" });
+    $("prompt-block").textContent = data.prompt_block || $("prompt-block").textContent;
+    $("stat-prompt").textContent = OT.fmtInt((data.prompt_block || "").length);
+    $("chat-calls").innerHTML = (data.api_calls && data.api_calls.length)
+      ? OT.table(data.api_calls, [
+          { label: "round", cls: "mono", key: "round" },
+          { label: "endpoint", cls: "mono", key: "endpoint" },
+          { label: "status", cls: "mono", key: "http_status" },
+          { label: "ms", cls: "mono", key: "latency_ms" },
+        ])
+      : `${data.verified ? "verified" : "no API calls"} · ${OT.fmtInt(data.system_prompt_chars)}
+         characters of system prompt · ${OT.esc(data.endpoint_count)} endpoints known`;
+  } catch (problem) {
+    bubble("assistant", `**${problem.code}** — ${problem.message}`, "error");
+  } finally {
+    $("chat-status").textContent = "";
+    $("send").disabled = false;
+  }
+}
+
+$("mint").addEventListener("click", mint);
+$("load-nft").addEventListener("click", () => loadNft());
+$("load-metadata-uri").addEventListener("click", () => loadNft("", ""));
+$("send").addEventListener("click", send);
+$("reset-chat").addEventListener("click", () => {
+  history = [];
+  $("chat").innerHTML = "";
+  if (loaded) loadNft(loaded.address, loaded.token_id);
+});
+$("refresh").addEventListener("click", loadCatalogue);
+$("catalogue").addEventListener("click", event => {
+  const button = event.target.closest("[data-address]");
+  if (button) loadNft(button.dataset.address, button.dataset.token);
+});
+$("chat-prompt").addEventListener("keydown", event => {
+  if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) send();
+});
+
+document.addEventListener("DOMContentLoaded", async () => {
+  initVoice();
+  await wallets();
+  loadCatalogue();
+  OT.models($("chat-model"));
+});
+</script>
+{% endblock %}

@@ -1,0 +1,505 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel" id="admin-gate" hidden>
+  <h2><span class="dot"></span>Operator page <span class="badge warn">admin session required</span></h2>
+  <p class="tiny">
+    The Ollama runtime and the model routing belong to the node operator: signing in here
+    means the admin username + password created at <a href="/admin">/admin</a>, sent as
+    <code>x-admin-session</code>. The token never leaves the node — no page asks for it.
+    Everything else on this dashboard (wallet, meme coins, AI-NFTs, app builders) is
+    public and uses the visitor's own account wallet.
+  </p>
+</section>
+
+<section class="grid g2">
+  <div class="panel">
+    <div class="row">
+      <div>
+        <div class="eyebrow">the node carries ollama</div>
+        <h2 style="margin:0">Ollama runtime</h2>
+      </div>
+      <div class="spacer"></div>
+      <button class="btn ghost small" id="refresh">refresh</button>
+    </div>
+    <div id="status" style="margin-top:.7rem">reading…</div>
+    <div class="row" style="margin-top:.7rem">
+      <button class="btn lime small" id="install">auto-install</button>
+      <button class="btn small" id="bootstrap">bootstrap: install + start + model</button>
+      <button class="btn ghost small" id="start">start server</button>
+      <button class="btn ghost small" id="show-prompt">system prompt</button>
+    </div>
+    <div id="lifecycle" style="margin-top:.6rem"></div>
+    <p class="tiny" style="margin-top:.6rem">
+      Install uses <code>winget</code> on Windows and <code>install.sh</code> elsewhere.
+      The API URL follows <code>OLLAMA_HOST</code> when it is set.
+    </p>
+  </div>
+
+  <div class="panel">
+    <h2><span class="dot"></span>Pull a model</h2>
+    <div class="row">
+      <div class="field" style="flex:1;min-width:200px">
+        <label for="pull-model">model name</label>
+        <input id="pull-model" placeholder="llama3.2:3b">
+      </div>
+      <button class="btn small" id="pull" style="align-self:flex-end">download</button>
+    </div>
+    <div class="progress" style="margin-top:.6rem"><i id="pull-bar"></i></div>
+    <div class="console" id="pull-log" style="margin-top:.5rem;min-height:120px">progress appears here…</div>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="row">
+    <h2 style="margin:0"><span class="dot"></span>Installed models</h2>
+    <div class="spacer"></div>
+    <span class="badge" id="model-count">—</span>
+  </div>
+  <div id="models" style="margin-top:.7rem">loading…</div>
+</section>
+
+<section class="grid g2">
+  <div class="panel">
+    <div class="row">
+      <div>
+        <div class="eyebrow">one click = a real ollama pull</div>
+        <h2 style="margin:0">Download a model</h2>
+      </div>
+      <div class="spacer"></div>
+      <span class="badge" id="suggested-count">—</span>
+    </div>
+    <div id="suggested" style="margin-top:.7rem">loading…</div>
+    <p class="tiny" style="margin-top:.5rem">
+      Sizes are download sizes, not RAM. A model with native tool calling keeps the
+      command deck in one round-trip; the others fall back to the JSON protocol.
+    </p>
+  </div>
+
+  <div class="panel">
+    <h2><span class="dot"></span>ollama run &lt;model&gt;</h2>
+    <p class="tiny" style="margin-top:0">
+      Type the line exactly as in a terminal. The node executes it against the
+      Ollama API it carries — <code>run</code>, <code>pull</code>, <code>list</code>,
+      <code>ps</code>, <code>show</code>, <code>rm</code>, <code>serve</code>.
+    </p>
+    <div class="field">
+      <label for="cli">command</label>
+      <input id="cli" class="mono" placeholder="ollama run llama3.2:3b summarise the chain">
+    </div>
+    <div class="row" style="margin-top:.5rem">
+      <button class="btn small" id="cli-run">run command</button>
+      <button class="btn ghost small" id="cli-help">?</button>
+      <span class="tiny muted" id="cli-status"></span>
+    </div>
+    <div class="console" id="cli-out" style="margin-top:.5rem;max-height:240px">output appears here…</div>
+  </div>
+</section>
+
+
+<section class="grid g2">
+  <div class="panel">
+    <h2><span class="dot"></span>ollama run &lt;model&gt;</h2>
+    <div class="field"><label for="run-model">model</label><select id="run-model"></select></div>
+    <label for="run-prompt">prompt</label>
+    <textarea id="run-prompt" style="min-height:90px"
+      placeholder="Summarise the chain state in one sentence."></textarea>
+    <div class="row" style="margin-top:.6rem">
+      <button class="btn small" id="run">run</button>
+      <span class="tiny muted" id="run-status"></span>
+    </div>
+    <div class="console" id="run-out" style="margin-top:.6rem">output appears here…</div>
+  </div>
+
+  <div class="panel">
+    <h2><span class="dot"></span>Chat with the node</h2>
+    <p class="tiny">Same brain as the command deck: schema + live snapshot + real API calls.</p>
+    <div class="voice-bar" style="margin:.4rem 0">
+      <label class="switch"><input type="checkbox" id="voice-on" checked> play response</label>
+      <span class="badge info" id="voice-gender">female voice</span>
+      <span class="tiny muted" id="voice-name">—</span>
+      <div class="spacer"></div>
+      <button class="btn ghost small" id="voice-record" type="button">● record</button>
+      <span class="tiny muted" id="voice-status"></span>
+    </div>
+    <div class="chat" id="chat">
+      <div class="msg assistant"><span class="who">tor-mind</span>
+        Ask for a balance, a record, a quote or a deployment — I will call the API.</div>
+    </div>
+    <div class="row" style="margin-top:.6rem">
+      <div class="field" style="flex:1;min-width:180px">
+        <label for="chat-input">message</label>
+        <input id="chat-input" placeholder="who holds the most TOR?">
+      </div>
+      <button class="btn small" id="chat-send" style="align-self:flex-end">send</button>
+    </div>
+  </div>
+</section>
+
+<details class="panel">
+  <summary style="cursor:pointer;font-weight:600">System prompt handed to the model</summary>
+  <pre class="code" id="prompt" style="max-height:480px">open “system prompt” to load it…</pre>
+</details>
+
+<section class="panel">
+  <h2><span class="dot"></span>Live calls</h2>
+  <div id="api-log" class="log" style="max-height:180px"></div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const $ = id => document.getElementById(id);
+
+/* ------------------------------------------------------------------- audio */
+/* The blockchain interface speaks with a female voice; the switch is
+   remembered per surface and the record button transcribes into the input. */
+const VOICE_GENDER = "female";
+let recorder = null;
+
+function voiceOn() { return $("voice-on").checked; }
+
+function initVoice() {
+  $("voice-on").checked = OT.voice.enabled("ollama", true);
+  const support = OT.voice.supported();
+  $("voice-name").textContent = support.speech
+    ? OT.voice.voiceName(VOICE_GENDER)
+    : "no speech synthesis in this browser";
+  if (!support.recognition) {
+    $("voice-record").disabled = true;
+    $("voice-record").title = "speech recognition needs Chrome or Edge";
+    $("voice-status").textContent = "record needs Chrome or Edge";
+  }
+}
+
+function stopRecording() {
+  if (recorder) recorder.stop();
+  recorder = null;
+  $("voice-record").classList.remove("rec-on");
+  $("voice-status").textContent = "";
+}
+
+$("voice-on").addEventListener("change", () => {
+  OT.voice.remember("ollama", $("voice-on").checked);
+  if (!voiceOn()) OT.voice.stop();
+  OT.toast(voiceOn() ? "the node will read answers aloud (female voice)"
+                     : "spoken answers off", "ok");
+});
+
+$("voice-record").addEventListener("click", () => {
+  if (recorder) { stopRecording(); return; }
+  $("voice-status").textContent = "listening…";
+  $("voice-record").classList.add("rec-on");
+  recorder = OT.voice.listen({
+    onText: text => { $("chat-input").value = text; },
+    onEnd: stopRecording,
+    onError: reason => { $("voice-status").textContent = reason; },
+  });
+  if (!recorder) { $("voice-record").classList.remove("rec-on"); $("voice-status").textContent = ""; }
+});
+
+async function loadStatus() {
+  try {
+    const data = await OT.get("/api/ollama/status");
+    let loaded = (data.running || []).map(row => row.name);
+    try {
+      const live = await OT.get("/api/ollama/ps");
+      loaded = (live.models || []).map(row => row.name);
+    } catch (_) { /* status already carries an honest snapshot */ }
+    $("status").innerHTML = OT.kv([
+      ["installed", data.installed ? `<span class="badge ok">yes</span>` : `<span class="badge bad">no</span>`],
+      ["binary", OT.esc(data.binary || "—")],
+      ["api url", `<span class="mono">${OT.esc(data.api_url)}</span>`],
+      ["reachable", data.reachable ? `<span class="badge ok">yes</span>` : `<span class="badge bad">no</span>`],
+      ["version", OT.esc(data.version || "—")],
+      ["models", OT.esc(data.model_count)],
+      ["loaded", loaded.join(", ") || "none"],
+      ["default model", OT.esc(data.default_model || "—")],
+    ]);
+    $("model-count").textContent = `${data.model_count} installed`;
+    if (data.error) {
+      $("lifecycle").innerHTML = `<span class="badge bad">${OT.esc(data.error)}</span>`;
+    }
+    $("models").innerHTML = OT.table(data.models, [
+      { label: "name", cls: "mono", render: row => `<b>${OT.esc(row.name)}</b>` },
+      { label: "size", cls: "mono", render: row => row.size_gb ? `${row.size_gb} GB` : "cloud" },
+      { label: "family", render: row => OT.esc(row.family || "—") },
+      { label: "params", cls: "mono", render: row => OT.esc(row.parameters || "—") },
+      { label: "quant", cls: "mono", render: row => OT.esc(row.quantization || "—") },
+      { label: "modified", render: row => OT.esc(OT.when(row.modified_at)) },
+      { label: "", render: row => `<button class="btn ghost small" data-use="${OT.esc(row.name)}">use</button>
+        <button class="btn danger small" data-delete="${OT.esc(row.name)}">delete</button>` },
+    ], "no models yet — pull one above");
+  } catch (problem) {
+    $("status").innerHTML = `<span class="badge bad">${OT.esc(problem.message)}</span>`;
+  }
+}
+
+async function refreshModels() {
+  await loadStatus();
+  await OT.models($("run-model"));
+}
+
+$("refresh").addEventListener("click", refreshModels);
+$("install").addEventListener("click", async () => {
+  $("lifecycle").innerHTML = `<span class="spinner"></span> installing — this can take a few minutes…`;
+  try {
+    const data = await OT.post("/api/ollama/install", {});
+    $("lifecycle").innerHTML = (data.installed
+      ? `<span class="badge ok">installed ${OT.esc(data.version || "")}</span>`
+      : `<span class="badge bad">install failed</span> ` +
+        `<span class="tiny">${OT.esc(data.next || "")}</span>`) +
+      `<pre class="code" style="max-height:180px">${OT.esc(data.log || "")}</pre>`;
+    refreshModels();
+  } catch (problem) {
+    $("lifecycle").innerHTML = `<span class="badge bad">${OT.esc(problem.code)}</span>
+      <span class="tiny">${OT.esc(problem.message)}</span>`;
+  }
+});
+$("start").addEventListener("click", async () => {
+  $("lifecycle").innerHTML = `<span class="spinner"></span> starting ollama serve…`;
+  try {
+    const data = await OT.post("/api/ollama/start", {});
+    $("lifecycle").innerHTML = `<span class="badge ok">${data.already_running ? "already running" : "started"}</span>` +
+      `<span class="tiny mono"> ${OT.esc(data.api_url)} · v${OT.esc(data.version || "?")}</span>`;
+    refreshModels();
+  } catch (problem) {
+    $("lifecycle").innerHTML = `<span class="badge bad">${OT.esc(problem.code)}</span>
+      <span class="tiny">${OT.esc(problem.message)}</span>`;
+  }
+});
+$("show-prompt").addEventListener("click", async () => {
+  try {
+    const data = await OT.get("/api/ollama/prompt");
+    $("prompt").textContent = data.system_prompt;
+    document.querySelector("details.panel").open = true;
+    $("prompt").scrollIntoView({ behavior: "smooth", block: "center" });
+  } catch (problem) {
+    $("prompt").textContent = problem.message;
+  }
+});
+
+async function pullModel(model) {
+  if (!model) { OT.toast("model name is required", "bad"); return; }
+  $("pull").disabled = true;
+  $("pull-bar").style.width = "0%";
+  $("pull-log").textContent = `pulling ${model}…\n`;
+  try {
+    await OT.stream("/api/ollama/pull", { model }, chunk => {
+      if (chunk.error) {
+        $("pull-log").innerHTML += `<span class="err">error: ${OT.esc(chunk.error.message)}</span>\n`;
+        return;
+      }
+      const done = chunk.completed || 0;
+      const total = chunk.total || 0;
+      if (total) $("pull-bar").style.width = `${Math.min(100, (done / total) * 100).toFixed(1)}%`;
+      const line = [chunk.status, total ? `${OT.fmtInt(done)}/${OT.fmtInt(total)}` : ""]
+        .filter(Boolean).join(" · ");
+      $("pull-log").innerHTML += `${OT.esc(line)}\n`;
+      $("pull-log").scrollTop = $("pull-log").scrollHeight;
+      if (chunk.done) {
+        $("pull-bar").style.width = "100%";
+        $("pull-log").innerHTML += `<span class="dim">done.</span>\n`;
+      }
+    });
+    OT.toast(`${model} is ready`, "ok");
+    refreshModels();
+  } catch (problem) {
+    $("pull-log").innerHTML += `<span class="err">${OT.esc(problem.message)}</span>\n`;
+  } finally {
+    $("pull").disabled = false;
+  }
+}
+
+$("pull").addEventListener("click", () => pullModel($("pull-model").value.trim()));
+
+$("models").addEventListener("click", async event => {
+  const use = event.target.closest("button[data-use]");
+  const remove = event.target.closest("button[data-delete]");
+  if (use) {
+    $("run-model").value = use.dataset.use;
+    $("pull-model").value = use.dataset.use;
+    $("run-prompt").focus();
+    OT.toast(`${use.dataset.use} selected`, "ok");
+  }
+  if (remove) {
+    if (!confirm(`Delete ${remove.dataset.delete} from disk?`)) return;
+    try {
+      await OT.del(`/api/ollama/models/${encodeURIComponent(remove.dataset.delete)}`);
+      OT.toast("model deleted", "ok");
+      refreshModels();
+    } catch (problem) {
+      OT.toast(problem.message, "bad");
+    }
+  }
+});
+
+$("run").addEventListener("click", async () => {
+  const prompt = $("run-prompt").value.trim();
+  const model = $("run-model").value;
+  if (!prompt) { OT.toast("prompt is required", "bad"); return; }
+  $("run").disabled = true;
+  $("run-status").innerHTML = `<span class="spinner"></span> running ${OT.esc(model || "default")}…`;
+  $("run-out").textContent = "";
+  try {
+    const data = await OT.post("/api/ollama/run", { model: model || undefined, prompt });
+    $("run-out").textContent = data.response;
+    $("run-status").textContent =
+      `${data.model} · ${data.eval_count || "?"} tokens · ${data.done_reason || "done"}`;
+    if (voiceOn()) OT.voice.speak(data.response || "", { gender: VOICE_GENDER });
+  } catch (problem) {
+    $("run-out").innerHTML = `<span class="err">${OT.esc(problem.code)}: ${OT.esc(problem.message)}</span>`;
+    $("run-status").textContent = "";
+  } finally {
+    $("run").disabled = false;
+  }
+});
+
+function bubble(role, text) {
+  const node = document.createElement("div");
+  node.className = `msg ${role}`;
+  node.innerHTML = `<span class="who">${role === "user" ? "you"
+    : role === "tool" ? "tool" : "tor-mind"}</span>${role === "assistant" ? OT.md(text) : OT.esc(text)}`;
+  $("chat").appendChild(node);
+  $("chat").scrollTop = $("chat").scrollHeight;
+  return node;
+}
+
+async function chat() {
+  const text = $("chat-input").value.trim();
+  if (!text) return;
+  $("chat-input").value = "";
+  bubble("user", text);
+  const pending = bubble("assistant", "…thinking (calling the API)");
+  $("chat-send").disabled = true;
+  try {
+    const data = await OT.post("/api/ollama/chat", {
+      prompt: text, model: $("run-model").value || undefined, use_tools: true,
+    });
+    pending.innerHTML = `<span class="who">tor-mind · ${OT.esc(data.model)}</span>` +
+      (data.verified === false
+        ? `<div class="badge bad" style="margin-bottom:.4rem">unverified — no API call</div>` : "") +
+      OT.md(data.answer || "—");
+    if (voiceOn()) OT.voice.speak(data.answer || "", { gender: VOICE_GENDER });
+    (data.tool_calls || []).forEach(call => {
+      const line = document.createElement("div");
+      line.className = "msg tool";
+      line.innerHTML = `<span class="who">tool</span>${OT.esc(call.endpoint)} ` +
+        `→ ${OT.esc((data.api_calls.find(row => row.endpoint === call.endpoint) || {}).http_status || "?")}`;
+      $("chat").appendChild(line);
+    });
+  } catch (problem) {
+    pending.innerHTML = `<span class="who">tor-mind</span>` +
+      `<span class="badge bad">${OT.esc(problem.code)}</span> ${OT.esc(problem.message)}`;
+  } finally {
+    $("chat-send").disabled = false;
+    $("chat").scrollTop = $("chat").scrollHeight;
+  }
+}
+
+$("chat-send").addEventListener("click", chat);
+$("chat-input").addEventListener("keydown", event => { if (event.key === "Enter") chat(); });
+
+$("bootstrap").addEventListener("click", async () => {
+  $("lifecycle").innerHTML = `<span class="spinner"></span> install → start → first model… (a download can take minutes)`;
+  try {
+    const data = await OT.post("/api/ollama/bootstrap", { pull: true });
+    const steps = (data.steps || []).map(step =>
+      `<div>${step.ok ? `<span class="badge ok">ok</span>` : `<span class="badge bad">failed</span>`} ` +
+      `<span class="mono">${OT.esc(step.step)}</span> ` +
+      `<span class="tiny">${OT.esc(step.error || step.model || step.version || "")}</span></div>`).join("");
+    $("lifecycle").innerHTML =
+      (data.serving ? `<span class="badge ok">serving</span>` : `<span class="badge bad">not serving</span>`) +
+      `<span class="tiny mono"> ${OT.esc(data.api_url || "")} ${OT.esc(data.version || "")}</span>` +
+      `<div style="margin-top:.4rem">${steps}</div>` +
+      (data.next ? `<p class="tiny">${OT.esc(data.next)}</p>` : "");
+    refreshModels();
+    loadSuggested();
+  } catch (problem) {
+    $("lifecycle").innerHTML = `<span class="badge bad">${OT.esc(problem.code)}</span> ` +
+      `<span class="tiny">${OT.esc(problem.message)}</span>`;
+  }
+});
+
+async function loadSuggested() {
+  try {
+    const data = await OT.get("/api/ollama/suggested");
+    const rows = data.models || [];
+    $("suggested-count").textContent =
+      `${rows.filter(row => row.installed).length}/${rows.length} ready`;
+    $("suggested").innerHTML = rows.map(row => `
+      <div class="row" style="justify-content:space-between;border-bottom:1px solid var(--line);padding:.35rem 0">
+        <div style="min-width:0">
+          <b class="mono">${OT.esc(row.model)}</b>
+          <span class="badge ${row.tools ? "info" : "warn"}">${row.tools ? "tools" : "json"}</span>
+          <div class="tiny muted">${OT.esc(row.label)} · ${row.size_gb} GB · ${OT.esc(row.note)}</div>
+        </div>
+        <div class="row" style="gap:.3rem">
+          ${row.installed
+            ? `<span class="badge ok">installed</span>`
+            : `<button class="btn small" data-pull="${OT.esc(row.model)}">download</button>`}
+          <button class="btn ghost small" data-run="${OT.esc(row.run)}">run</button>
+        </div>
+      </div>`).join("");
+  } catch (problem) {
+    $("suggested").innerHTML = `<span class="badge bad">${OT.esc(problem.message)}</span>`;
+  }
+}
+
+$("suggested").addEventListener("click", event => {
+  const download = event.target.closest("button[data-pull]");
+  const run = event.target.closest("button[data-run]");
+  if (download) {
+    $("pull-model").value = download.dataset.pull;
+    pullModel(download.dataset.pull);
+  }
+  if (run) {
+    $("cli").value = `${run.dataset.run} `;
+    $("cli").focus();
+  }
+});
+
+$("cli-help").addEventListener("click", () => {
+  $("cli-out").textContent = [
+    "ollama run <model> [prompt]", "ollama pull <model>", "ollama list",
+    "ollama ps", "ollama show <model>", "ollama rm <model>", "ollama serve",
+  ].join("\n");
+});
+
+$("cli-run").addEventListener("click", async () => {
+  const command = $("cli").value.trim();
+  if (!command) { OT.toast("type an ollama command", "bad"); return; }
+  $("cli-run").disabled = true;
+  $("cli-status").innerHTML = `<span class="spinner"></span> running…`;
+  $("cli-out").textContent = "";
+  try {
+    const data = await OT.post("/api/ollama/command", { command });
+    $("cli-status").textContent = `${data.kind}${data.model ? " · " + data.model : ""}`;
+    if (data.kind === "run") {
+      $("cli-out").textContent = data.response || "(empty response)";
+    } else if (data.kind === "list" || data.kind === "ps") {
+      $("cli-out").textContent =
+        (data.models || []).map(row => row.name).join("\n") || "(no models)";
+    } else if (data.kind === "pull") {
+      $("cli-out").textContent = `pull ${data.model} → ${data.stream.endpoint}\n${data.note}`;
+      $("pull-model").value = data.model;
+      pullModel(data.model);
+    } else {
+      $("cli-out").textContent = JSON.stringify(data, null, 2);
+    }
+    refreshModels();
+  } catch (problem) {
+    $("cli-status").innerHTML = `<span class="badge bad">${OT.esc(problem.code)}</span>`;
+    $("cli-out").innerHTML = `<span class="err">${OT.esc(problem.message)}</span>`;
+  } finally {
+    $("cli-run").disabled = false;
+  }
+});
+
+document.addEventListener("DOMContentLoaded", async () => {
+  if (!OT.adminSession()) $("admin-gate").hidden = false;
+  initVoice();
+  await refreshModels();
+  loadSuggested();
+});
+</script>
+{% endblock %}

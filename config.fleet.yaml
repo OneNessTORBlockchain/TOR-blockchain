@@ -1,0 +1,43 @@
+# The fleet wiring — committed, so every deploy (a Render node, this laptop, an
+# onion node) reads the same answer to "who proposes, who mirrors".
+#
+# HOW IT IS READ (oneness_tor/services/node_sync.py -> fleet()):
+#   * a node whose own api.admin_token hashes (sha3-256) to origin.admin_token_sha256
+#     IS the origin: it keeps role=origin and never pulls from its own URL;
+#   * a node whose own public host is origin.url (ONENESS_PUBLIC_BASE_URL, or the
+#     RENDER_EXTERNAL_URL Render injects) IS the origin too, for the same reason:
+#     pulling from itself would demote it to a read-only replica of itself;
+#   * so is a node that has actually answered a request addressed to origin.url's
+#     host. A custom domain in front of Render (www.torblockchain.fun) appears
+#     nowhere in the environment — Render only advertises <service>.onrender.com —
+#     but it does appear in the requests, and oneness_tor.services.base_url.remember
+#     keeps those hosts in data/node/self_hosts.json. Without that rule the live
+#     origin demoted itself to a read-only replica of itself and every send
+#     answered 409 SYNC_READ_ONLY on a chain that looked perfectly healthy;
+#   * every other node becomes a replica of origin.url — even when a stale
+#     ONENESS_NODE_ROLE=origin is still set in a dashboard, which is exactly how a
+#     node ends up "syncing" with itself and never catching up;
+#   * an explicit ONENESS_SYNC_ORIGIN / ONENESS_SYNC_TOKEN (or config.yaml
+#     sync.origin_url / sync.origin_token) still wins over the url/token below —
+#     so a dead dashboard value MUST be deleted, not left behind. That is what
+#     "the origin https://<something>.trycloudflare.com is not reachable" was:
+#     a killed Cloudflare quick tunnel still pinned in .env / the dashboard.
+#
+# origin.url is the live public node (Render), not a tunnel: it keeps answering
+# across redeploys, so no hostname has to be re-committed after a restart.
+#
+# origin.token is the origin's chain admin token — a chain credential, kept out of
+# every page and log, and only safe here because this repository is private. Set
+# the same value as ONENESS_ADMIN_TOKEN on the origin so its own token hashes to
+# admin_token_sha256 (that is what marks it as the origin), and so replicas can
+# pull the snapshot with exactly this token.
+origin:
+  url: https://www.torblockchain.fun
+  token: 14e477cb31413df1c4dc81933f7d4b10
+  admin_token_sha256: 6fb03a6984da7868a8b041b6ab7ccabfc32f36485aaee46cd3b7bf90de281025
+  genesis_hash: fc9a220ce910b083188ee90f53561a4e3cf7c24b3723b655417e4fa34af6e156
+replicas:
+  # pull on a timer; a replica that is not ahead of the origin imports nothing
+  auto: true
+  interval_seconds: 60
+

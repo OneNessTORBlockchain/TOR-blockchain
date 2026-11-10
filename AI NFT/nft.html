@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OneNess Wallet — NFT Studio</title>
+<link rel="stylesheet" href="assets/style.css?v=4">
+<style>
+/* ---- NFT studio (page-local) — every class used on this page is defined here ---- */
+.nft-grid{display:grid;grid-template-columns:minmax(0,430px) minmax(0,1fr);gap:22px;margin-top:18px;align-items:start}
+@media(max-width:1020px){.nft-grid{grid-template-columns:1fr}}
+.nft-image{width:132px;height:132px;max-width:132px;max-height:132px;object-fit:cover;border-radius:18px;
+  border:1px solid var(--line2);box-shadow:var(--gradGlow);cursor:zoom-in;flex:none;display:block;background:#0a0f1c}
+.nft-modal{position:fixed;inset:0;z-index:300;background:rgba(2,4,10,.85);display:grid;place-items:center;
+  backdrop-filter:blur(8px)}
+.nft-modal img{max-width:88vw;max-height:88vh;border-radius:18px;box-shadow:var(--gradGlow);cursor:zoom-out}
+.nft-chip{display:inline-flex;align-items:center;gap:5px;padding:3px 11px;border-radius:999px;font-size:11.5px;
+  color:var(--dim);background:rgba(139,92,246,.08);border:1px solid rgba(139,92,246,.3);margin:0 6px 6px 0}
+.nft-chip b{color:var(--text)}
+.chatlog{height:430px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:8px 2px;overscroll-behavior:contain}
+.chatlog::-webkit-scrollbar{width:8px}
+.chatlog::-webkit-scrollbar-thumb{background:rgba(148,163,184,.3);border-radius:8px}
+.bubble{max-width:84%;padding:10px 15px;border-radius:16px;font-size:14px;line-height:1.5;
+  white-space:pre-wrap;word-wrap:break-word;overflow-wrap:anywhere}
+.bubble.user{align-self:flex-end;background:linear-gradient(135deg,rgba(34,211,238,.14),rgba(139,92,246,.18));
+  border:1px solid rgba(139,92,246,.42);border-bottom-right-radius:5px}
+.bubble.ai{align-self:flex-start;background:var(--glass2);border:1px solid var(--line);border-bottom-left-radius:5px}
+.bubble.typing{display:flex;gap:6px;align-items:center;padding:13px 18px}
+.bubble.typing span{width:7px;height:7px;border-radius:50%;background:var(--vio);opacity:.3;
+  animation:bnc 1.2s infinite;display:inline-block}
+.bubble.typing .d2{animation-delay:.15s}.bubble.typing .d3{animation-delay:.3s}
+@keyframes bnc{0%,80%,100%{transform:translateY(0);opacity:.3}40%{transform:translateY(-5px);opacity:1}}
+.recording-indicator{display:inline-flex;align-items:center;gap:7px;color:var(--err);font-size:12.5px;
+  text-shadow:0 0 10px rgba(251,95,121,.5)}
+.recording-indicator .dot{width:9px;height:9px;border-radius:50%;background:var(--err);
+  box-shadow:0 0 8px var(--err);animation:rec 1.1s ease-in-out infinite}
+@keyframes rec{0%,100%{opacity:.25;transform:scale(.75)}50%{opacity:1;transform:scale(1.2)}}
+#ai-mic{min-width:46px}
+#ai-mic.active{border-color:var(--err);box-shadow:0 0 14px rgba(251,95,121,.4);color:var(--err)}
+.attrrow{display:flex;gap:8px;margin-bottom:8px;align-items:center}
+.imgprev{width:56px;height:56px;border-radius:12px;object-fit:cover;border:1px solid var(--line2)}
+.chatimg{width:112px;height:112px;max-width:112px;max-height:112px;object-fit:cover;border-radius:14px;
+  border:1px solid var(--line2);box-shadow:var(--gradGlow);cursor:zoom-in;display:block;background:#0a0f1c;flex:none}
+.chatimg-none{display:grid;place-items:center;font-size:34px;cursor:default;color:var(--dim)}
+.composer{display:flex;gap:8px;align-items:flex-end;margin-top:12px}
+.composer textarea{flex:1;resize:none;height:64px}
+/* ---- NFT portfolio ---- */
+.pf-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px;margin-top:12px}
+.pf-tile{background:var(--glass2);border:1px solid var(--line);border-radius:16px;padding:10px;min-width:0}
+.pf-frame{width:100%;aspect-ratio:1}
+.pf-frame img{width:100%;height:100%;object-fit:cover;border-radius:12px;border:1px solid var(--line2);background:#0a0f1c;display:block}
+.pf-noimg{width:100%;height:100%;display:grid;place-items:center;font-size:30px;border:1px dashed var(--line2);border-radius:12px;color:var(--dim)}
+.pf-name{font-size:13px;margin-top:7px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pf-tag{font-size:10.5px;padding:2px 8px;border-radius:999px;border:1px solid var(--line2);margin-right:5px}
+.pf-hot{color:#34d399;border-color:rgba(52,211,153,.45)}
+.pf-cold{color:#8b5cf6;border-color:rgba(139,92,246,.45)}
+</style>
+</head>
+<body>
+<div id="view" class="wrap">
+  <div class="pagehead">
+    <h1>NFT <span class="gradtx">studio</span></h1>
+    <p>Mint 1-of-1 Solana NFTs with the <b>sol mint</b> bot — then talk to them.
+       The AI-NFT chatbox loads any mint by token address + token ID, reads the
+       Metaplex metadata (description, image, traits) into the AI system prompt,
+       and chats over OpenRouter's <b>free</b> models — with mic input and
+       spoken replies (male ↔ female switch).</p>
+  </div>
+  <div id="feebox"></div>
+  <div class="nft-grid">
+    <section class="card card3d">
+      <h2><span class="ic">⛓</span>Minting bot</h2>
+      <label class="f"><span>Wallet (hot Solana)</span>
+        <select class="inp" id="mn-wallet"></select></label>
+      <div class="row">
+        <label class="f" style="flex:2"><span>Name *</span>
+          <input class="inp" id="mn-name" maxlength="32" placeholder="e.g. Neon Void Walker"></label>
+        <label class="f" style="flex:1"><span>Symbol</span>
+          <input class="inp mono" id="mn-symbol" maxlength="10" placeholder="NVW" style="text-transform:uppercase"></label>
+      </div>
+      <label class="f"><span>Description (it becomes the AI persona too)</span>
+        <textarea class="inp" id="mn-desc" rows="3" maxlength="2000" placeholder="A ghost who walks the chain…"></textarea></label>
+      <label class="f"><span>Image — upload a file (up to 8 MiB)…</span>
+        <input class="inp" id="mn-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif"></label>
+      <div class="row" style="align-items:center;gap:10px">
+        <img id="mn-imgprev" class="imgprev" alt="" src="" style="display:none">
+        <label class="f" style="flex:1"><span>…or paste an https:// image URL</span>
+          <input class="inp mono" id="mn-imgurl" placeholder="https://files.catbox.moe/xxxx.png"></label>
+      </div>
+      <label class="f"><span>Royalties (seller fee basis points)</span>
+        <input class="inp mono" id="mn-fee" inputmode="numeric" value="500"></label>
+      <div style="margin-top:6px">
+        <span class="dim small">Attributes</span>
+        <div id="mn-attrs" style="margin-top:8px"></div>
+        <button class="btn sm" id="mn-addattr">+ Add trait</button>
+      </div>
+<!--@@P2-->
+      <div class="ugerr" id="mn-err" style="color:var(--err);font-size:12.5px;min-height:18px"></div>
+      <div class="row">
+        <button class="btn pri" id="mn-go" style="flex:1">⛓ Mint 1-of-1 NFT</button>
+      </div>
+      <p class="hint">Costs ≈0.061–0.063 SOL incl. the flat 0.05 SOL mint fee (mint account + token account + metadata
+      rent + fees). The image and metadata.json are uploaded to catbox.moe, then one
+      transaction mints on-chain: create mint → initialize → ATA → mint 1 → Metaplex
+      metadata. This is the ported `sol mint` bot pipeline.</p>
+      <div id="mn-out"></div>
+    </section>
+
+    <section class="card card3d" id="chat-card">
+      <h2><span class="ic">✦</span>AI-NFT chatbox</h2>
+      <div class="row">
+        <label class="f" style="flex:3"><span>NFT token address (mint)</span>
+          <input class="inp mono" id="ai-mint" placeholder="paste the NFT mint address"></label>
+        <label class="f" style="flex:1"><span>Token ID</span>
+          <input class="inp mono" id="ai-tid" maxlength="16" placeholder="#"></label>
+      </div>
+      <div class="row" style="margin-top:2px">
+        <button class="btn pri" id="ai-load" style="flex:1">⤓ Load NFT</button>
+      </div>
+      <div id="ai-err" style="color:var(--err);font-size:12.5px;min-height:18px"></div>
+      <div id="nft-pane"></div>
+      <div class="row" style="margin-top:14px;align-items:flex-end;gap:8px">
+        <label class="f" style="flex:1"><span>Model — free OpenRouter models only</span>
+          <select class="inp" id="ai-model"><option value="">loading free models…</option></select></label>
+        <button class="btn sm" id="ai-refresh" title="reload the free model list" style="margin-bottom:14px">↻</button>
+      </div>
+      <div id="ai-note" class="dim tiny" style="margin:2px 0 8px"></div>
+      <div id="chatlog" class="chatlog">
+        <div class="bubble ai">Enter the NFT token address + token ID and press
+        <b>Load NFT</b> — then chat. 🎙 mic for voice input, and replies can be
+        spoken aloud (voice switch below).</div>
+      </div>
+      <span id="ai-rec"></span>
+      <div class="composer">
+        <button class="btn" id="ai-mic" title="speak your message">🎙</button>
+        <textarea class="inp" id="ai-in" placeholder="Ask your NFT something… (Enter to send)"></textarea>
+        <button class="btn pri" id="ai-send">Send ↩</button>
+      </div>
+      <div class="row" style="margin-top:10px;gap:14px;align-items:center">
+        <label style="display:flex;gap:7px;align-items:center" class="small dim">
+          <input type="checkbox" id="ai-speak" checked> 🔊 Speak replies</label>
+        <label class="small dim" style="display:flex;gap:7px;align-items:center">Voice
+          <select class="inp" id="ai-gender" style="width:auto">
+            <option value="female" selected>♀ female</option>
+            <option value="male">♂ male</option>
+          </select></label>
+      </div>
+    </section>
+
+    <section class="card card3d" id="pf-card" style="grid-column:1/-1">
+      <h2><span class="ic">🗂</span>NFT <span class="gradtx">portfolio</span></h2>
+      <p class="dim small">Every NFT your Solana wallets hold — hot signers and
+      view-only vaults alike — indexed from the RPC and stored here.
+      Freshly minted NFTs appear automatically.</p>
+      <div class="row" style="align-items:flex-end;gap:8px">
+        <label class="f" style="flex:2"><span>Wallet</span>
+          <select class="inp" id="pf-wallet"><option value="">All wallets</option></select></label>
+        <button class="btn pri" id="pf-refresh" style="flex:1">⟳ Refresh portfolio</button>
+      </div>
+      <div id="pf-note" class="dim tiny" style="margin:8px 0 2px"></div>
+      <div id="pf-grid" class="pf-grid"></div>
+      <div id="pf-empty" class="dim small" style="display:none">no NFTs stored yet —
+      mint one above or press Refresh</div>
+    </section>
+  </div>
+  <div class="foot">
+    <a href="dashboard.html">← Dashboard</a>
+    <span>Minting bot ported from `mint bot/sol mint` · AI via OpenRouter (free models only)</span>
+  </div>
+</div>
+<script src="assets/app.js?v=4"></script>
+<script>
+ON.favicon();
+const $ = ON.$, $$ = ON.$$, esc = ON.esc;
+
+(async () => {
+  await ON.requireAuth();
+  await ON.shell('nft.html');
+  $('#feebox').innerHTML = await ON.feeBanner();
+
+  /* ---- minting bot: hot Solana wallets + attributes + image ---- */
+  let wallets = [];
+  try {
+    wallets = (await ON.loadWallets()).filter(w => w.chain === 'sol' && w.mode === 'hot');
+  } catch (e) { /* surfaced at submit time */ }
+  $('#mn-wallet').innerHTML = wallets.length
+    ? wallets.map(w => `<option value="${w.id}">${esc(w.label || 'Wallet #' + w.id)} — ${esc(ON.short(w.public_key, 6))}</option>`).join('')
+    : '<option value="">— no hot Solana wallet (create one first) —</option>';
+
+  const attrWrap = $('#mn-attrs');
+  const addAttr = (t = '', v = '') => {
+    const row = document.createElement('div');
+    row.className = 'attrrow';
+    row.innerHTML = `<input class="inp" placeholder="trait_type" value="${esc(t)}" style="flex:1">
+      <input class="inp" placeholder="value" value="${esc(v)}" style="flex:1">
+      <button class="btn sm" data-del title="remove">×</button>`;
+    row.querySelector('[data-del]').onclick = () => row.remove();
+    attrWrap.appendChild(row);
+  };
+  $('#mn-addattr').onclick = () => addAttr();
+  addAttr();
+
+  let imageData = '';
+  $('#mn-file').addEventListener('change', () => {
+    const f = $('#mn-file').files && $('#mn-file').files[0];
+    imageData = '';
+    const prev = $('#mn-imgprev');
+    if (!f) { prev.style.display = 'none'; prev.src = ''; return; }
+    if (f.size > 8 * 1024 * 1024) { ON.toast('image must be ≤ 8 MiB', 'err'); $('#mn-file').value = ''; return; }
+    const fr = new FileReader();
+    fr.onload = () => { imageData = String(fr.result); prev.src = imageData; prev.style.display = ''; };
+    fr.readAsDataURL(f);
+  });
+/*@@P5*/
+  $('#mn-go').onclick = async () => {
+    const err = $('#mn-err'); err.textContent = '';
+    const walletId = Number($('#mn-wallet').value);
+    const name = $('#mn-name').value.trim();
+    if (!walletId) { err.textContent = 'select a hot Solana wallet'; return; }
+    if (!name) { err.textContent = 'the NFT needs a name'; return; }
+    const attributes = $$('#mn-attrs .attrrow').map(r => ({
+      trait_type: r.children[0].value.trim(), value: r.children[1].value.trim(),
+    })).filter(a => a.trait_type && a.value);
+    const body = {
+      wallet_id: walletId, name,
+      symbol: ($('#mn-symbol').value.trim() || '').toUpperCase(),
+      description: $('#mn-desc').value.trim(),
+      seller_fee_bps: Number($('#mn-fee').value) || 500,
+      attributes,
+      image_url: $('#mn-imgurl').value.trim() || null,
+      image_data: imageData || null,
+    };
+    if (!body.image_url && !body.image_data) {
+      err.textContent = 'choose an image file or paste an https:// image URL'; return;
+    }
+    if (!(await ON.confirmM('Mint 1-of-1 NFT',
+        `Mint "${esc(name)}"${body.symbol ? ' ($' + esc(body.symbol) + ')' : ''}? Rent + fees + the 0.05 SOL mint fee ≈ 0.061–0.063 SOL from the selected wallet. The NFT will be owned by that wallet.`,
+        'Mint', true))) return;
+    const go = $('#mn-go'); go.disabled = true; go.textContent = 'Minting…';
+    const r = await ON.withUnlock(() => ON.api('/api/nft/mint', { method: 'POST', body }));
+    go.disabled = false; go.textContent = '⛓ Mint 1-of-1 NFT';
+    if (r.skipped) return;
+    if (!r.ok) { err.textContent = (r.data && r.data.detail) || 'mint failed'; return; }
+    const d = r.data;
+    $('#mn-out').innerHTML = `<div class="card" style="margin-top:14px;border-color:rgba(52,211,153,.45)">
+      <h2><span class="ic">✓</span>NFT minted on-chain</h2>
+      ${d.image_url ? `<span class="tokframe" style="width:56px;height:56px;max-width:56px;max-height:56px;border-radius:14px"><img src="${esc(d.image_url)}" alt=""></span>` : ''}
+      <p class="small dim" style="margin-top:8px">Mint address (this is your token address):</p>
+      <div class="keybox" style="word-break:break-all">${esc(d.mint)}</div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn sm" id="mn-cp">Copy mint</button>
+        <a class="btn sm" href="${esc(d.explorer_url)}" target="_blank" rel="noopener">Explorer ↗</a>
+        <a class="btn sm" href="${esc(d.solscan_url)}" target="_blank" rel="noopener">Solscan ↗</a>
+        <button class="btn sm pri" id="mn-chat">Load into chat ↘</button></div>
+      <p class="hint">Metadata: <span class="mono tiny">${esc(ON.short(d.metadata_uri, 26))}</span>
+      · sig <span class="mono tiny">${esc(ON.short(d.signature, 10))}</span></p></div>`;
+    ON.toast('NFT minted ✓');
+    pfLoad();
+    $('#mn-cp').onclick = async () => ON.toast((await ON.copy(d.mint)) ? 'Mint address copied' : 'copy failed', 'ok');
+    $('#mn-chat').onclick = () => {
+      $('#ai-mint').value = d.mint; $('#ai-tid').value = '';
+      loadNft();
+      window.scrollTo({ top: $('#chat-card').offsetTop - 90, behavior: 'smooth' });
+    };
+  };
+/*@@P6*/
+  /* ---- NFT portfolio: stored holdings per Solana wallet ---- */
+  let pfBusy = false;
+  function pfTag(n) {
+    return (n.wallet_mode || 'hot') === 'cold'
+      ? '<span class="pf-tag pf-cold">❄ ' + esc(n.wallet_label || ('Wallet #' + n.wallet_id)) + '</span>'
+      : '<span class="pf-tag pf-hot">🔥 ' + esc(n.wallet_label || ('Wallet #' + n.wallet_id)) + '</span>';
+  }
+  function pfTile(n) {
+    return `<div class="pf-tile">
+      <div class="pf-frame">${n.image_url ? `<img src="${esc(n.image_url)}" alt="" loading="lazy">` : '<div class="pf-noimg">🖼</div>'}</div>
+      <div class="pf-name" title="${esc(n.name || '')}">${esc(n.name || 'unnamed')}</div>
+      <div class="tiny dim mono">${esc(ON.short(n.mint, 6))}</div>
+      <div class="tiny dim">${esc(n.symbol ? '$' + n.symbol : '')}</div>
+      <div style="margin-top:6px">${pfTag(n)}</div>
+      <div class="row" style="margin-top:8px;gap:6px">
+        <button class="btn sm" data-chat="${esc(n.mint)}">Chat</button>
+        <a class="btn sm" href="https://explorer.solana.com/address/${esc(n.mint)}" target="_blank" rel="noopener">↗</a>
+      </div>
+    </div>`;
+  }
+  function pfRender(nfts) {
+    $('#pf-grid').innerHTML = nfts.map(pfTile).join('');
+    $('#pf-empty').style.display = nfts.length ? 'none' : '';
+    $$('#pf-grid .pf-frame img').forEach(im => {
+      im.onerror = () => {
+        const ph = document.createElement('div');
+        ph.className = 'pf-noimg';
+        ph.textContent = '🖼';
+        im.replaceWith(ph);
+      };
+    });
+    $$('#pf-grid [data-chat]').forEach(b => b.onclick = () => {
+      $('#ai-mint').value = b.dataset.chat; $('#ai-tid').value = '';
+      loadNft();
+      window.scrollTo({ top: $('#chat-card').offsetTop - 90, behavior: 'smooth' });
+    });
+  }
+  async function pfLoad() {
+    const wid = $('#pf-wallet').value;
+    const r = await ON.api('/api/nft/portfolio' + (wid ? `?wallet_id=${wid}` : ''));
+    if (r.ok) {
+      pfRender(r.data.nfts || []);
+      $('#pf-note').textContent = `${r.data.total} NFT(s) stored`;
+    } else {
+      $('#pf-note').textContent = (r.data && r.data.detail) || 'could not load the portfolio';
+    }
+  }
+  $('#pf-refresh').onclick = async () => {
+    if (pfBusy) return;
+    pfBusy = true;
+    const btn = $('#pf-refresh'); const wid = $('#pf-wallet').value;
+    btn.disabled = true; btn.textContent = 'Refreshing…';
+    const r = await ON.api('/api/nft/portfolio/refresh', {
+      method: 'POST', body: wid ? { wallet_id: Number(wid) } : {},
+    });
+    btn.disabled = false; btn.textContent = '⟳ Refresh portfolio'; pfBusy = false;
+    if (r.ok) {
+      const walls = r.data.wallets || [];
+      const errs = walls.filter(w => w.error).length;
+      $('#pf-note').textContent =
+        `synced ${walls.length} wallet(s) — ${r.data.total} NFT(s) stored${errs ? `, ${errs} failed` : ''}`;
+    } else {
+      $('#pf-note').textContent = (r.data && r.data.detail) || 'refresh failed';
+    }
+    await pfLoad();
+  };
+  $('#pf-wallet').onchange = pfLoad;
+  (async () => {
+    try {
+      const all = (await ON.loadWallets()).filter(w => w.chain === 'sol');
+      if (all.length) {
+        $('#pf-wallet').innerHTML = '<option value="">All wallets</option>' +
+          all.map(w => `<option value="${w.id}">${esc(w.label || 'Wallet #' + w.id)} (${esc(w.mode || 'hot')}) · ${esc(ON.short(w.public_key, 5))}</option>`).join('');
+      }
+    } catch (e) { /* surfaced by pfLoad */ }
+    pfLoad();
+  })();
+
+  let history = [], loaded = null;
+  const log = $('#chatlog');
+
+  async function loadModels() {
+    const sel = $('#ai-model');
+    const note = $('#ai-note');
+    const r = await ON.api('/api/nft/ai/models');
+    if (!r.ok) { sel.innerHTML = '<option value="">— free model list failed —</option>'; return; }
+    if (!(r.data && r.data.configured)) {
+      sel.innerHTML = '<option value="">— OPENROUTER_API_KEY not set on server —</option>';
+      note.textContent = 'Set OPENROUTER_API_KEY in the server .env and restart to enable AI chat.';
+      return;
+    }
+    const models = r.data.models || [];
+    sel.innerHTML = '<option value="">Auto (best free model)</option>' +
+      models.map(m => `<option value="${esc(m.id)}">${esc(m.name)}</option>`).join('');
+    note.textContent = `${models.length} free models loaded — every prompt & completion on these costs 0.00`;
+  }
+  $('#ai-refresh').onclick = loadModels;
+  loadModels();
+
+  async function loadNft() {
+    const err = $('#ai-err'); err.textContent = '';
+    const mint = $('#ai-mint').value.trim();
+    if (mint.length < 30) { err.textContent = 'paste the NFT token address (mint) first'; return; }
+    const btn = $('#ai-load'); btn.disabled = true; btn.textContent = 'Loading…';
+    const r = await ON.api(`/api/nft/${encodeURIComponent(mint)}`);
+    btn.disabled = false; btn.textContent = '⤓ Load NFT';
+    if (!r.ok) { err.textContent = (r.data && r.data.detail) || 'could not load this NFT'; return; }
+    loaded = r.data;
+    history = [];
+    const tid = $('#ai-tid').value.trim();
+    $('#nft-pane').innerHTML = `<div class="row" style="align-items:flex-start;gap:14px;margin-top:8px">
+      ${loaded.image ? `<img class="nft-image" id="nft-img" src="${esc(loaded.image)}" alt="">` : ''}
+      <div style="min-width:0;flex:1">
+        <b style="font-size:16px">${esc(loaded.name || 'unnamed')}</b>
+        ${loaded.symbol ? `<span class="nft-chip mono">$${esc(loaded.symbol)}</span>` : ''}
+        ${tid ? `<div class="dim small" style="margin-top:2px">Token ID / edition #${esc(tid)}</div>` : ''}
+        ${loaded.description ? `<p class="dim small" style="margin-top:8px;white-space:pre-wrap">${esc(loaded.description)}</p>` : ''}
+        ${(loaded.attributes || []).length ? `<div style="margin-top:8px">${loaded.attributes.slice(0, 12).map(a =>
+          `<span class="nft-chip">${esc(a.trait_type)}: <b>${esc(a.value)}</b></span>`).join('')}</div>` : ''}
+        <p class="tiny" style="margin-top:6px;color:var(--dim2)">source: ${esc(loaded.source || 'none')}</p>
+      </div></div>`;
+    const img = $('#nft-img');
+    if (img) img.onclick = () => openModal(loaded.image);
+    log.innerHTML = '';
+    const hello = document.createElement('div');
+    hello.className = 'bubble ai';
+    const cap = document.createElement('div');
+    cap.className = 'dim tiny';
+    cap.style.marginTop = '6px';
+    if (loaded.image) {
+      const im = document.createElement('img');
+      im.className = 'chatimg';
+      im.src = loaded.image;
+      im.alt = (loaded.name || 'NFT') + ' metadata image';
+      im.onclick = () => openModal(loaded.image);
+      im.onerror = () => {
+        const ph = document.createElement('div');
+        ph.className = 'chatimg chatimg-none';
+        ph.textContent = '🖼';
+        im.replaceWith(ph);
+        cap.textContent = 'metadata image unavailable (picture host down?)';
+      };
+      hello.appendChild(im);
+      cap.textContent = 'NFT metadata image — click to enlarge';
+    } else {
+      const ph = document.createElement('div');
+      ph.className = 'chatimg chatimg-none';
+      ph.textContent = '🖼';
+      hello.appendChild(ph);
+      cap.textContent = "no image in this NFT's metadata";
+    }
+    hello.appendChild(cap);
+    const greet = document.createElement('div');
+    greet.style.marginTop = '8px';
+    greet.innerHTML = `👋 <b>${esc(loaded.name || 'This NFT')}</b> is in the room${tid ? ` (edition #${esc(tid)})` : ''}. Its description drives my personality — ask me about my story, my traits or my world.`;
+    hello.appendChild(greet);
+    log.appendChild(hello);
+    log.scrollTop = log.scrollHeight;
+  }
+  $('#ai-load').onclick = loadNft;
+  $('#ai-mint').addEventListener('keydown', e => { if (e.key === 'Enter') loadNft(); });
+
+  function openModal(src) {
+    if (!src) return;
+    const m = document.createElement('div');
+    m.className = 'nft-modal';
+    m.innerHTML = `<img src="${esc(src)}" alt="">`;
+    m.onclick = () => m.remove();
+    document.body.appendChild(m);
+  }
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') $$('.nft-modal').forEach(m => m.remove());
+  });
+  /* ---- audio: TTS replies (male ↔ female) + mic transcription ---- */
+  const synth = window.speechSynthesis || null;
+  const FEMALE_HINTS = ['samantha', 'zira', 'aria', 'jenny', 'hazel', 'eva', 'serena',
+    'karen', 'moira', 'tessa', 'female', 'google uk english female', 'google us english'];
+  const MALE_HINTS = ['daniel', 'david', 'alex', 'fred', 'guy', 'james', 'male',
+    'google uk english male'];
+  let voiceGender = 'female';
+  $('#ai-gender').onchange = e => { voiceGender = e.target.value; };
+  const pickVoice = kind => {
+    const vs = synth ? synth.getVoices() : [];
+    const hints = kind === 'male' ? MALE_HINTS : FEMALE_HINTS;
+    for (const h of hints) {
+      const v = vs.find(x => x.name.toLowerCase().includes(h));
+      if (v) return v;
+    }
+    return vs[0] || null;
+  };
+  const plainText = s => String(s || '').replace(/[*_`#>]/g, '').slice(0, 1200);
+  function speak(text, gender = voiceGender) {
+    if (!synth || !text) return;
+    synth.cancel();
+    const u = new SpeechSynthesisUtterance(plainText(text));
+    const v = pickVoice(gender);
+    if (v) u.voice = v;
+    u.pitch = gender === 'male' ? 0.85 : 1.25;
+    u.rate = gender === 'male' ? 0.98 : 1.04;
+    synth.speak(u);
+  }
+
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const micBtn = $('#ai-mic');
+  let rec = null, recording = false;
+  if (!SR) {
+    micBtn.style.opacity = '.55';
+    micBtn.title = 'voice input needs Chrome / Edge / Safari';
+  } else {
+    rec = new SR();
+    rec.lang = 'en-US'; rec.interimResults = false; rec.continuous = false;
+    const stopUi = () => {
+      recording = false; micBtn.classList.remove('active'); $('#ai-rec').textContent = '';
+    };
+    rec.onresult = e => {
+      const t = Array.from(e.results).map(x => x[0].transcript).join(' ').trim();
+      if (t) $('#ai-in').value = ($('#ai-in').value ? $('#ai-in').value + ' ' : '') + t;
+    };
+    rec.onend = stopUi;
+    rec.onerror = stopUi;
+    micBtn.onclick = () => {
+      if (recording) { rec.stop(); return; }
+      try {
+        rec.start();
+        recording = true;
+        micBtn.classList.add('active');
+        $('#ai-rec').innerHTML = '<span class="recording-indicator"><span class="dot"></span>listening…</span>';
+      } catch (e) { /* restart race — ignore */ }
+    };
+  }
+
+  /* ---- send / receive (history lives here; system prompt is server-side) ---- */
+  function addBubble(kind, text, model) {
+    const b = document.createElement('div');
+    b.className = 'bubble ' + (kind === 'user' ? 'user' : 'ai');
+    b.textContent = text;
+    log.appendChild(b);
+    if (kind === 'ai') {
+      const meta = document.createElement('div');
+      meta.className = 'dim tiny';
+      meta.style.alignSelf = 'flex-start';
+      meta.innerHTML = `${model ? esc(model) + ' ' : ''}<button class="btn sm" data-sp title="speak again">🔊</button>`;
+      meta.querySelector('[data-sp]').onclick = () => speak(text);
+      log.appendChild(meta);
+    }
+    log.scrollTop = log.scrollHeight;
+  }
+  async function send() {
+    const err = $('#ai-err'); err.textContent = '';
+    const mint = $('#ai-mint').value.trim();
+    const text = $('#ai-in').value.trim();
+    if (!text) return;
+    if (!loaded || loaded.mint !== mint) {
+      err.textContent = 'load the NFT first (token address + Load NFT)'; return;
+    }
+    history.push({ role: 'user', content: text });
+    addBubble('user', text);
+    $('#ai-in').value = '';
+    const typing = document.createElement('div');
+    typing.className = 'bubble ai typing';
+    typing.innerHTML = '<span class="d1"></span><span class="d2"></span><span class="d3"></span>';
+    log.appendChild(typing); log.scrollTop = log.scrollHeight;
+    const r = await ON.api('/api/nft/ai/chat', {
+      method: 'POST',
+      body: {
+        mint: loaded.mint,
+        token_id: $('#ai-tid').value.trim() || null,
+        model: $('#ai-model').value || '',
+        messages: history.slice(-24),
+      },
+    });
+    typing.remove();
+    if (!r.ok) {
+      err.textContent = (r.data && r.data.detail) || 'AI request failed';
+      history.pop();
+      return;
+    }
+    const reply = (r.data && r.data.content) || '';
+    history.push({ role: 'assistant', content: reply });
+    addBubble('ai', reply, r.data.model);
+    if ($('#ai-speak').checked) speak(reply);
+  }
+  $('#ai-send').onclick = send;
+  $('#ai-in').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+  });
+  ON.tilt();
+})();
+</script>
+</body>
+</html>
