@@ -2,7 +2,7 @@
 
 One blueprint for the six products that ride on this node:
 
-* ``/api/market/*``  — the price & market-cap engine (TOR at $3.60, every pool)
+* ``/api/market/*``  — the price & market-cap engine (TOR's 30 s USD quote, every pool)
 * ``/api/projects``  — the platform directory with logos and URLs
 * ``/api/ads``       — banner rotation (permanent 1Ness banner + paid slots)
 * ``/api/ai/*``      — OpenRouter free models and the AI-NFT ChatBox
@@ -14,11 +14,14 @@ paid by the caller's own wallet session or the node admin, exactly like
 """
 from __future__ import annotations
 
+import hmac
+
 from flask import Blueprint, jsonify, request
 
+from core.config import settings
 from core.errors import Forbidden, ValidationError
 from oneness_tor.services import (ai_gateway, market_engine, meme, pool_books,
-                                  projects, pump, wallet_access)
+                                  projects, pump, tor_price, wallet_access)
 from oneness_tor.services.auth import is_admin_request
 
 bp = Blueprint("market_api", __name__, url_prefix="/api")
@@ -84,8 +87,35 @@ def market_chart(symbol: str):
 
 @bp.get("/market/tor")
 def market_tor():
-    """TOR alone: the anchor, the drift applied and the resulting USD price."""
+    """TOR alone: the live USD quote, its 30 s tick, the band and the activity."""
     return envelope(market_engine.snapshot()["tor"])
+
+
+@bp.get("/market/tor/price")
+def market_tor_price():
+    """The bare price every platform polls every 30 s — no board is built."""
+    return envelope(tor_price.peek())
+
+
+@bp.post("/market/tor/price")
+def market_tor_price_publish():
+    """The Marketcap & Price Engine publishes the quote every platform reads.
+
+    A quote outside $3.00-$100.00 is refused (400), never clamped silently: the
+    band is part of the contract, so an engine bug must be visible.
+    """
+    payload = _body()
+    expected = str(settings.get("market.engine_token") or "")
+    sent = (request.headers.get("x-price-engine-token")
+            or request.headers.get("x-admin-token") or "")
+    allowed = is_admin_request(request)
+    if not allowed and expected:
+        allowed = hmac.compare_digest(expected, str(sent))
+    if not allowed:
+        raise Forbidden(
+            "publishing a price needs the price-engine token (x-price-engine-token) "
+            "or an admin credential", details={"header": "x-price-engine-token"})
+    return envelope(market_engine.publish_tor_price(payload, actor="price-engine"))
 
 
 @bp.get("/market/pools")

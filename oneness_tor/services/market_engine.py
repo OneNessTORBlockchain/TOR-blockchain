@@ -2,10 +2,14 @@
 
 Every number here is derived from chain state, never typed in:
 
-* **TOR's USD price** starts at the configured anchor ($3.60) and drifts with
-  observed pool turnover — ``0.35 × (24 h volume ÷ pooled liquidity)``, clamped
-  to ±15%. That is a bounded, reproducible rule (the drift it applied is
-  reported next to the price), not an external oracle.
+* **TOR's USD price** is the 30-second volatility feed in
+  ``oneness_tor.services.tor_price``: one random step of $0.10-$0.50 per tick,
+  direction biased by the 24 h swaps and TOR volume the ledger reports, clamped
+  to a $3.00 floor and a $100.00 cap. The quote (and the tick it belongs to) is
+  reported next to the price, and the Marketcap & Price Engine can publish the
+  authoritative number through ``POST /api/market/tor/price``. The old
+  turnover drift is still published as ``drift`` for older clients, but it no
+  longer sets the price.
 * **A token's price** is its own AMM reserve ratio: ``price_tor`` from the
   Rust ledger's ``TOR ⟷ token`` pool, or the book's ``USDC ⟷ token`` ratio for
   the 50 USDC pairs. When both exist, the deeper pool wins and the other is
@@ -26,7 +30,7 @@ import time
 from datetime import datetime, timezone
 
 from core.config import settings
-from oneness_tor.services import pool_books, token_registry
+from oneness_tor.services import pool_books, token_registry, tor_price
 from oneness_tor.services.store import data_dir, read_json, write_json
 
 STANDARD = "oneness-tor-market/1"
@@ -168,13 +172,18 @@ def snapshot(limit: int = 500, *, refresh: bool = False) -> dict:
                  for book in pool_books.catalog()}
         anchor = anchor_usd()
         drift = _drift(rows, list(books.values()), anchor)
-        tor_usd = round(anchor * (1.0 + float(drift["drift"])), 8)
+        feed = tor_price.quote(
+            volume_tor=sum(_number(row.get("volume_24h_tor")) for row in rows),
+            swaps=sum(_number(row.get("volume_24h_swaps")) for row in rows),
+            liquidity_tor=sum(_number(row.get("liquidity_tor")) for row in rows),
+            anchor_usd=anchor)
+        tor_usd = feed["price_usd"]
         native = next((row for row in rows
                        if str(row.get("symbol")).upper() == "TOR"), None)
         views = [_row_view(row, tor_usd, books) for row in rows
                  if row is not native]
         samples = {str(view["symbol"]): _number(view["price_tor"]) for view in views}
-        samples["TOR"] = 1.0
+        samples["TOR"] = tor_usd
         remember(samples)
         for view in views:
             change, observations = _change_24h(str(view["symbol"]),
@@ -194,7 +203,17 @@ def snapshot(limit: int = 500, *, refresh: bool = False) -> dict:
             "holders": (native or {}).get("holders"),
             "image": (native or {}).get("image"),
             "mint_address": (native or {}).get("mint_address"),
-            "change_24h": _change_24h("TOR", 1.0)[0],
+            "change_24h": _change_24h("TOR", tor_usd)[0],
+            "price_source": feed["source"],
+            "update_seconds": feed["update_seconds"],
+            "updated_at": feed["updated_at"],
+            "next_update_at": feed["next_update_at"],
+            "floor_usd": feed["floor_usd"], "cap_usd": feed["cap_usd"],
+            "volatility": {key: feed[key] for key in
+                           ("standard", "tick", "step_usd", "direction", "bias",
+                            "target_usd", "clamped", "rule", "engine_fresh")},
+            "activity": feed["activity"],
+            "price_history": feed["history"],
             "drift": drift, "quote": "USD",
         }
         totals = {
@@ -218,12 +237,30 @@ def snapshot(limit: int = 500, *, refresh: bool = False) -> dict:
                 "prices": "TOR pools on the Rust ledger + USDC books on this node",
                 "supply": "on-chain token supply",
                 "volume": "real swap records the ledger holds",
-                "tor_usd": "anchored, turnover-drifted, capped ±15%",
+                "tor_usd": tor_price.RULE,
             },
         }
         _CACHE["payload"] = payload
         _CACHE["at"] = time.time()
         return dict(payload)
+
+
+def forget() -> None:
+    """Drop the cached board (a published quote must be visible immediately)."""
+    with LOCK:
+        _CACHE["payload"] = None
+        _CACHE["at"] = 0.0
+
+
+def publish_tor_price(payload: dict, *, actor: str = "") -> dict:
+    """Accept the Price Engine's TOR/USD quote and drop the stale board."""
+    block = tor_price.publish(payload.get("price_usd"),
+                              activity=payload.get("activity")
+                              if isinstance(payload.get("activity"), dict) else None,
+                              actor=actor or str(payload.get("source") or "engine"),
+                              source="engine")
+    forget()
+    return block
 
 
 
@@ -258,7 +295,8 @@ def chart(symbol: object, points: int | None = None) -> dict:
     wanted = int(_number(points or settings.get("market.chart_points")) or 168)
     wanted = max(2, min(1000, wanted))
     series = list(_history().get(ticker) or [])
-    current = 1.0 if ticker == "TOR" else _number(token(ticker).get("price_tor"))
+    current = (_number(token(ticker).get("price_usd")) if ticker == "TOR"
+               else _number(token(ticker).get("price_tor")))
     if not series:
         series = [[int(time.time()), current]]
     series = series[-wanted:]

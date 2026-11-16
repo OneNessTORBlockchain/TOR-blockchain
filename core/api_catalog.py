@@ -1085,8 +1085,27 @@ MARKET: list[dict] = [
               P("points", type="int", example=168)),
       returns="{symbol, candles: [{time, open, high, low, close}], summary, source}"),
     E("market.tor", "GET", "/api/market/tor",
-      "TOR alone: the $3.60 anchor, the turnover drift applied, the resulting price and cap.",
-      returns="{symbol, anchor_usd, price_usd, market_cap_usd, drift}"),
+      "TOR alone: the live 30 s USD quote — the tick (step, direction, bias), the "
+      "$3-$100 band, the activity it tracks, the resulting market cap and the last "
+      "180 samples. Every platform reads this one number.",
+      returns="{symbol, price_usd, anchor_usd, floor_usd, cap_usd, update_seconds, "
+              "updated_at, next_update_at, source, volatility: {tick, step_usd, direction, "
+              "bias, target_usd, clamped, rule, engine_fresh}, activity: {score, "
+              "volume_24h_tor, swaps_24h, liquidity_tor}, price_history, market_cap_usd, drift}"),
+    E("market.tor_price", "GET", "/api/market/tor/price",
+      "The bare TOR/USD quote every product polls every 30 s — no board is built.",
+      returns="{standard, price_usd, update_seconds, updated_at, next_update_at, source, "
+              "floor_usd, cap_usd, activity, rule}"),
+    E("market.tor_price_publish", "POST", "/api/market/tor/price",
+      "The Marketcap & Price Engine publishes the authoritative TOR/USD quote; the node "
+      "serves it to every platform until the next tick. A quote outside $3.00-$100.00 is "
+      "refused (400), never clamped silently.",
+      params=(P("price_usd", where="json", type="float", required=True, example=12.34),
+              P("activity", where="json", description="the engine's activity block"),
+              P("source", where="json", description="publisher label", example="engine")),
+      auth="price-engine-token-or-admin",
+      returns="{standard, price_usd, update_seconds, updated_at, next_update_at, source, "
+              "published_by, tick, activity, history}"),
     E("market.pools", "GET", "/api/market/pools",
       "Every pool: TOR pools from the Rust ledger plus the USDC books, deepest first.",
       params=(P("base", description="TOR or USDC", example="USDC"),

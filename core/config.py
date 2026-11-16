@@ -84,6 +84,24 @@ _ENV_MAP = {
     "ONENESS_OPENROUTER_MODEL": "openrouter.model",
     # the price engine's TOR anchor (USD) â€” every token price derives from it
     "ONENESS_TOR_USD": "pricing.tor_usd",
+    # the 30 s TOR/USD volatility feed (oneness_tor.services.tor_price)
+    "ONENESS_PRICE_TICK_SECONDS": "market.price_tick_seconds",
+    "ONENESS_PRICE_STEP_MIN_USD": "market.price_step_min_usd",
+    "ONENESS_PRICE_STEP_MAX_USD": "market.price_step_max_usd",
+    "ONENESS_PRICE_FLOOR_USD": "market.price_floor_usd",
+    "ONENESS_PRICE_CAP_USD": "market.price_cap_usd",
+    "ONENESS_PRICE_ENGINE_TOKEN": "market.engine_token",
+    # paid membership (oneness_tor.services.membership): $11.99 per 30 days in TOR
+    "ONENESS_MEMBERSHIP_USD": "membership.usd",
+    "ONENESS_MEMBERSHIP_DAYS": "membership.days",
+    "ONENESS_MEMBERSHIP_TREASURY": "membership.treasury",
+    "ONENESS_MEMBERSHIP_CONTRACT": "membership.contract",
+    "ONENESS_MEMBERSHIP_PLAN": "membership.plan_id",
+    "ONENESS_MEMBERSHIP_LABEL": "membership.plan_label",
+    "ONENESS_MEMBERSHIP_FREE": "membership.free_messages",
+#: how long a wallet's VM lease (POST /membership/<w>/sessions) lives without a
+#: heartbeat -- the products renew it, and a lease nobody renews must die
+"ONENESS_MEMBERSHIP_SESSION_TTL": "membership.session_ttl",
 }
 
 
@@ -108,14 +126,50 @@ _DEFAULTS: dict[str, Any] = {
     "api.host": "127.0.0.1",
     "api.port": 8090,
     "api.admin_token": "change-me",
-    # TOR is quoted in USD by the price engine. The anchor is the launch price
-    # ($3.60); the engine drifts it with real pool turnover, clamped to Â±15%.
+    # TOR is quoted in USD by the price engine. $3.60 is the anchor a brand-new
+    # node starts from; oneness_tor.services.tor_price then walks the price every
+    # 30 s inside market.price_floor_usd .. market.price_cap_usd (Capitain's
+    # volatility order, 2026-11-15), and the Marketcap & Price Engine can publish
+    # the authoritative quote through POST /api/market/tor/price.
     "pricing.tor_usd": 3.60,
+    # paid membership (oneness_tor.services.membership + contracts "membership"
+    # template): the USD price is the plan's, the TOR amount is always the price
+    # engine's live rate at the moment of the quote. treasury "" = the node's
+    # own fee receiver; contract "" = the id written by
+    # POST /api/payments/membership/contract (data/membership/contract.json).
+    "membership.usd": 11.99,
+    "membership.days": 30,
+    #: the free tier the three paid products share: five sent messages per wallet,
+    #: counted on the chain so a reinstall cannot refill it
+    "membership.free_messages": 5,
+    #: seconds a VM lease survives without a heartbeat (oneness_tor.services
+    #: .wallet_sessions): one wallet, one live VM per product, renewed by the
+    #: product and released on sign-out, expiry or cancellation
+    "membership.session_ttl": 3600,
+    "membership.plan_id": "oneness-membership",
+    "membership.plan_label": "OneNess TOR membership - 30 days",
+    "membership.treasury": "",
+    "membership.contract": "",
     # the price & market-cap engine (Solarix dashboard, screener, every app)
     "market.cache_seconds": 15.0,
-    "market.sample_seconds": 60.0,
+    "market.sample_seconds": 30.0,
     "market.history_points": 2000,
     "market.chart_points": 168,
+    # TOR/USD volatility (oneness_tor.services.tor_price): one tick every 30 s,
+    # a random $0.10-$0.50 step, direction biased by 24 h swaps + TOR volume,
+    # and an absolute band of $3.00 .. $100.00 that no tick may leave.
+    "market.price_tick_seconds": 30.0,
+    "market.price_step_min_usd": 0.10,
+    "market.price_step_max_usd": 0.50,
+    "market.price_floor_usd": 3.00,
+    "market.price_cap_usd": 100.00,
+    "market.price_history_points": 2880,
+    # what "busy" means: 24 h TOR volume and swap count that earn a full score
+    "market.activity_volume_tor": 1000.0,
+    "market.activity_swaps": 250,
+    # the credential the Marketcap & Price Engine uses to publish a quote
+    # (empty = the engine falls back to a platform/admin key)
+    "market.engine_token": "",
     # OpenRouter â€” free models only; the key never reaches a browser
     "openrouter.base_url": "https://openrouter.ai/api/v1",
     "openrouter.api_key": "",

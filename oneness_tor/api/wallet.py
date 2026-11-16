@@ -17,7 +17,7 @@ from __future__ import annotations
 from flask import Blueprint, jsonify, request
 
 from core.errors import ValidationError
-from oneness_tor.services import ledger, payments, wallet_access
+from oneness_tor.services import ledger, membership, payments, wallet_access
 from oneness_tor.services.auth import is_admin_request, require_admin
 
 bp = Blueprint("wallet_api", __name__, url_prefix="/api")
@@ -208,3 +208,81 @@ def pay_invoice(invoice_id: str):
 @bp.get("/payments/revenue")
 def revenue():
     return envelope(payments.revenue())
+
+
+# -------------------------------------------------------------- membership
+#: $11.99 per 30 days in TOR, settled by the visitor's own wallet and recorded
+#: by the deployed ``membership`` contract. Reading is public; paying needs the
+#: wallet session that owns the money (``oneness_tor.services.wallet_access``).
+@bp.get("/payments/membership")
+def membership_overview():
+    """The plan, one live quote in TOR, the treasury and the contract's state."""
+    months = request.args.get("months", 1, type=float) or 1
+    return envelope(membership.overview(months))
+
+
+@bp.post("/payments/membership/invoices")
+def membership_create_invoice():
+    """Freeze the TOR amount for the signed-in wallet — no money moves yet."""
+    payload = request.get_json(silent=True)
+    payload = payload if isinstance(payload, dict) else {}
+    held = wallet_access.session(request) or {}
+    wallet = str(payload.get("wallet") or held.get("wallet") or "").strip()
+    if not wallet:
+        raise ValidationError("wallet is required — sign in at /wallet first",
+                              details={"header": wallet_access.HEADER})
+    wallet_access.authorize_wallet(request, wallet)
+    address = str(ledger.load_wallet(wallet).get("address") or "")
+    return envelope(membership.create_invoice(
+        wallet=wallet, address=str(payload.get("address") or address),
+        months=float(payload.get("months") or 1), note=payload.get("note", ""),
+        privacy=payload.get("privacy")))
+
+
+@bp.get("/payments/membership/invoices/<invoice_id>")
+def membership_get_invoice(invoice_id: str):
+    return envelope({"invoice": membership.get_invoice(invoice_id)})
+
+
+@bp.post("/payments/membership/invoices/<invoice_id>/pay")
+def membership_pay(invoice_id: str):
+    """Settle with a real signed transfer, then let the contract record the period.
+
+    ``privacy: "anonymous"`` makes the public record read ``Tor-Anonymous-onion``
+    instead of the payer's address; the buyer's receipt keeps the real one.
+    """
+    payload = request.get_json(silent=True)
+    payload = payload if isinstance(payload, dict) else {}
+    held = wallet_access.session(request) or {}
+    wallet = str(payload.get("wallet") or held.get("wallet") or "").strip()
+    if not wallet:
+        raise ValidationError("wallet is required — sign in at /wallet first",
+                              details={"header": wallet_access.HEADER})
+    wallet_access.authorize_wallet(request, wallet)
+    return envelope(membership.pay(invoice_id, wallet,
+                                   privacy=payload.get("privacy")))
+
+
+@bp.get("/payments/membership/accounts/<address>")
+def membership_account(address: str):
+    """Is this wallet a member? A fact with its expiry — never a gate."""
+    return envelope(membership.status(address))
+
+
+@bp.get("/payments/membership/accounts/<address>/receipts")
+def membership_receipts(address: str):
+    """Every paid membership invoice of that wallet, newest first."""
+    limit = request.args.get("limit", 50, type=int) or 50
+    return envelope(membership.receipts(address, limit))
+
+
+@bp.post("/payments/membership/contract")
+def membership_deploy_contract():
+    """Admin: deploy the membership program (5 TOR, compiled before it is stored)."""
+    require_admin(request)
+    payload = request.get_json(silent=True)
+    payload = payload if isinstance(payload, dict) else {}
+    return envelope(membership.deploy_contract(
+        name=str(payload.get("name") or "OneNess TOR membership"),
+        owner_wallet=str(payload.get("owner_wallet") or "founder"),
+        wallet=str(payload.get("wallet") or "founder")))

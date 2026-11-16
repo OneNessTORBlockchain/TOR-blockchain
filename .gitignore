@@ -1,4 +1,8 @@
 # OneNess TOR — never commit key material, chain data or build output
+# this public snapshot ships .env.example only
+.env
+.env.local
+*.local.env
 data/wallets/
 data/chain/
 data/chain-demo/

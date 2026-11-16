@@ -9,13 +9,20 @@ right now, and where did that number come from?** It lives in
 
 | Number | Rule | Source |
 | --- | --- | --- |
-| TOR price | `anchor × (1 + drift)` | `pricing.tor_usd` (3.60) in `config.yaml` |
-| TOR drift | `0.35 × (24 h volume ÷ pooled liquidity)`, clamped to ±15% | real swap records ÷ pool reserves |
+| TOR price | one tick every 30 s: a random step of $0.10–$0.50, the direction biased by activity, clamped to $3.00–$100.00 | `oneness_tor/services/tor_price.py` (`data/market/tor-price.json`) |
+| TOR anchor | where a cold node starts ($3.60) | `pricing.tor_usd` in `config.yaml` |
+| Activity | 60 % 24 h TOR volume + 40 % swap count, scored 0–1 | `/api/public/records` |
+| Engine publish | `POST /api/market/tor/price` — the Marketcap & Price Engine's quote wins while it is fresh (60 s) | `oneness_tor/api/market.py` |
 | Token price | the pool's own reserve ratio | `tor_reserve / token_reserve` on chain, or the USDC book's `usdc_reserve / token_reserve` |
 | Market cap | `price × on-chain supply` | `token.supply` from the ledger |
 | Liquidity | quote-side reserve × 2 | pool or book |
 | 24 h volume | sum of real swap records the ledger holds (nothing expires) | `/api/public/records` |
-| Candles | one per sampled price (`market.sample_seconds`, default 60 s) | `data/market/history.json` |
+| Candles | one per sampled price (`market.sample_seconds`, default 30 s — the tick) | `data/market/history.json` |
+
+The old turnover drift (`0.35 × volume ÷ liquidity`, ±15 %) is still reported as
+`drift` for older clients, but it no longer sets the price. The 30 s walk is the
+volatility rule: step **$0.10–$0.50**, floor **$3.00**, cap **$100.00**, and the
+published engine quote is authoritative until the next tick.
 
 Nothing is imported from an oracle. When both a TOR pool and a USDC book exist,
 the deeper one sets the price and the other is listed beside it
@@ -32,7 +39,9 @@ invented candle would be a lie about liquidity.
 | `GET /api/market/overview` | TOR, totals, movers, newest listings, deepest pools |
 | `GET /api/market/tokens` | every token priced in USD |
 | `GET /api/market/tokens/{symbol}` | one token with both pools and 24 h change |
-| `GET /api/market/tor` | TOR alone, with the drift it applied |
+| `GET /api/market/tor` | TOR alone: the live 30 s quote, its tick, band and activity |
+| `GET /api/market/tor/price` | the bare TOR/USD quote (no board built) |
+| `POST /api/market/tor/price` | the Marketcap & Price Engine publishes the authoritative quote (engine/admin credential; outside $3–$100 is 400) |
 | `GET /api/market/chart/{symbol}?points=168` | candles + summary + source |
 | `GET /api/market/pools?base=TOR` | 120 TOR pools and 50 USDC books, deepest first |
 | `GET /api/market/quote?symbol=&side=&amount=&base=` | constant-product quote |

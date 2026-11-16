@@ -24,6 +24,7 @@ from oneness_tor.api.dev import bp as dev_bp
 from oneness_tor.api.fees import bp as fees_bp
 from oneness_tor.api.ipfs import bp as ipfs_bp
 from oneness_tor.api.market import bp as market_bp
+from oneness_tor.api.membership import bp as membership_bp
 from oneness_tor.api.meme import bp as meme_bp
 from oneness_tor.api.nft import bp as nft_bp
 from oneness_tor.api.pages import bp as pages_bp
@@ -34,8 +35,8 @@ from oneness_tor.api.workbench import bp as workbench_bp
 from oneness_tor.services import base_url
 
 __version__ = "1.0.0"
-BLUEPRINTS = (chain_bp, wallet_bp, accounts_bp, services_bp, meme_bp, nft_bp,
-              brain_bp, workbench_bp, public_bp, ipfs_bp, dev_bp, market_bp,
+BLUEPRINTS = (chain_bp, wallet_bp, membership_bp, accounts_bp, services_bp, meme_bp,
+              nft_bp, brain_bp, workbench_bp, public_bp, ipfs_bp, dev_bp, market_bp,
               pages_bp, fees_bp)
 
 #: Always open even when ``api.require_key`` is on: sign-in, the catalog, the

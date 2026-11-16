@@ -63,6 +63,19 @@ class FeeError(AppError):
     http_status = 402
 
 
+class MembershipRequired(AppError):
+    """The wallet has no active membership and no free message left.
+
+    ``402`` on purpose: a product (the webapp's fifth message, the API's key
+    mint, the Desktop's window) can tell "you must pay" apart from "you are not
+    allowed" without parsing English. The details always carry the price and the
+    two calls that fix it.
+    """
+
+    code = "MEMBERSHIP_REQUIRED"
+    http_status = 402
+
+
 class ChainUnavailable(AppError):
     """The node RPC is down/unreachable — nothing was charged."""
     code = "CHAIN_UNAVAILABLE"

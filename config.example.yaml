@@ -113,7 +113,8 @@ privacy:
 
 ollama:
   base_url: http://127.0.0.1:11434         # ignored when OLLAMA_HOST is set
-  model: qwen2.5:7b-instruct              # default model for every AI surface
+  model: gpt-oss:20b                      # default model for every AI surface
+                                          # (a hosted ollama.com has no qwen2.5 tag)
   models:                                 # per-surface override ("" = use model)
     brain: ""                             # blockchain interface / command deck
     nft: ""                               # AI-NFT Studio (mint + chat)
@@ -190,8 +191,25 @@ sync:
       # - url: http://<id>.onion
       #   label: onion node
 
+market:
+  # TOR/USD volatility (oneness_tor.services.tor_price): one tick every 30 s,
+  # a random $0.10-$0.50 step, direction biased by the 24 h swaps + TOR volume
+  # the ledger reports, and an absolute $3.00-$100.00 band.
+  price_tick_seconds: 30
+  price_step_min_usd: 0.10
+  price_step_max_usd: 0.50
+  price_floor_usd: 3
+  price_cap_usd: 100
+  # what "busy" means: 24 h TOR volume and swap count that earn a full score
+  activity_volume_tor: 1000
+  activity_swaps: 250
+  # the board cache and the price sample (one per tick)
+  cache_seconds: 15
+  sample_seconds: 30
+
 pricing:
-  # TOR launch price in USD — the anchor every platform quotes against.
+  # Where a cold node starts, in USD. oneness_tor.services.tor_price then walks
+  # the price every 30 s (market.price_* below): the anchor is not the price.
   tor_usd: 3.60
   overrides:
     # banner advertising is sold by the week; the screener API key is a

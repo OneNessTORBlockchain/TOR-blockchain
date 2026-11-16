@@ -33,11 +33,17 @@
 # pull the snapshot with exactly this token.
 origin:
   url: https://www.torblockchain.fun
-  token: 14e477cb31413df1c4dc81933f7d4b10
+  token: ""            # set the origin's chain admin token here (never commit it)
   admin_token_sha256: 6fb03a6984da7868a8b041b6ab7ccabfc32f36485aaee46cd3b7bf90de281025
   genesis_hash: fc9a220ce910b083188ee90f53561a4e3cf7c24b3723b655417e4fa34af6e156
 replicas:
   # pull on a timer; a replica that is not ahead of the origin imports nothing
   auto: true
   interval_seconds: 60
+
+# Node 2 — the address every tool falls back to while the origin is cold. The
+# Marketcap & Price Engine reads the same list from ONENESS_API_FALLBACKS, and
+# https://www.torblockchain.fun (origin) stays first everywhere.
+fallback:
+  - https://torblockchain.onrender.com
 

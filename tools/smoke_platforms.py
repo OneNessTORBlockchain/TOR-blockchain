@@ -15,12 +15,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import time
 import urllib.error
 import urllib.request
 
 BASE = "http://127.0.0.1:8090"
-ADMIN_TOKEN = "14e477cb31413df1c4dc81933f7d4b10"
+ADMIN_TOKEN = os.environ.get("ONENESS_ADMIN_TOKEN", "")
 
 
 def call(path, *, body=None, session="", method=None, admin=False):

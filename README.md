@@ -1,6 +1,3 @@
-
-<img width="2172" height="724" alt="1Ness TOR Blockchain banner" src="https://github.com/user-attachments/assets/97ed63ed-4217-438c-85b1-f13eb3514a9b" />
-
 # OneNess TOR — node, API, command brain and console
 
 A complete TOR-chain node: a **Rust ledger** (`rust/torchain`) that owns every
@@ -753,7 +750,7 @@ Six apps read this node and share one client kit (`apps/tor-kit`): logo, dark
 | 3 | DARKWEB CRYPTO — the same board + both fee receivers + your API keys | `…\axiom-clone-main` | 5175 |
 | 4 | TOR PUMP — free mints, $5 000 platform pool, $25k curve, creator fees | `…\openpump-main\web` | 5176 |
 | 5 | TOR CHARTS — the candle generator rendered and documented | `…\lightweight-charts-master\tor-charts` | 5177 |
-| 6 | SOLARIX ENGINE — TOR at $3.60, market caps, pools, movers | `…\Solarix-main\dashboard` | 5178 |
+| 6 | SOLARIX ENGINE — TOR's live 30 s USD quote, market caps, pools, movers | `…\Solarix-main\dashboard` | 5178 |
 
 ```powershell
 python tools\scaffold_apps.py --force     # shells + copy the kit into all six

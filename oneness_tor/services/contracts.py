@@ -141,10 +141,167 @@ pub fn call(state: &mut Subscription, function: &str, now: i64) -> i64 {
     }
 }
 """},
+    "membership": {
+        "name": "Membership",
+        "description": ("Paid membership: $11.99 per 30 days in TOR, one account "
+                        "per wallet, every payment a real transfer."),
+        "functions": ["price", "subscribe", "renew", "cancel", "active", "expired"],
+        "source": """//! OneNess TOR - membership contract (no external crates)
+//!
+//! One program, one plan, one account per wallet. Money never lives here: a
+//! payment is a real TOR transfer on the ledger, and `subscribe` records the
+//! receipt that opened the period. `expires_at` is the only value a product
+//! reads, and this program only *reports* it - it never blocks anybody.
+pub struct Plan {
+    pub id: String,
+    pub label: String,
+    pub price_usd_cents: u64,
+    pub days: u64,
+    pub treasury: String,
+    pub owner: String,
+}
+
+#[derive(Clone)]
+pub struct Account {
+    pub address: String,
+    pub plan: String,
+    pub paid_micro: u64,
+    pub payments: u64,
+    pub expires_at: i64,
+    pub last_txid: String,
+}
+
+impl Account {
+    pub fn new(address: &str, plan: &str) -> Self {
+        Self {
+            address: address.to_string(),
+            plan: plan.to_string(),
+            paid_micro: 0,
+            payments: 0,
+            expires_at: 0,
+            last_txid: String::new(),
+        }
+    }
+
+    pub fn active(&self, now: i64) -> bool {
+        self.expires_at > now
+    }
+}
+
+impl Plan {
+    pub fn new(id: &str, label: &str, price_usd_cents: u64, days: u64,
+               treasury: &str, owner: &str) -> Self {
+        Self {
+            id: id.to_string(),
+            label: label.to_string(),
+            price_usd_cents,
+            days,
+            treasury: treasury.to_string(),
+            owner: owner.to_string(),
+        }
+    }
+
+    /// TOR micro-units for one period, at a TOR/USD rate in micro-USD.
+    pub fn price_micro(&self, tor_usd_micro: u64) -> u64 {
+        if tor_usd_micro == 0 {
+            return 0;
+        }
+        let usd_micro = (self.price_usd_cents as u128) * 10_000;
+        let micro = usd_micro * 100_000_000 / (tor_usd_micro as u128);
+        micro as u64
+    }
+}
+
+pub struct Membership {
+    pub plan: Plan,
+    pub accounts: Vec<Account>,
+}
+
+impl Membership {
+    pub fn new(plan: Plan) -> Self {
+        Self { plan, accounts: Vec::new() }
+    }
+
+    fn index_of(&mut self, address: &str) -> usize {
+        let mut index = 0;
+        while index < self.accounts.len() {
+            if self.accounts[index].address == address {
+                return index;
+            }
+            index += 1;
+        }
+        let plan = self.plan.id.clone();
+        self.accounts.push(Account::new(address, &plan));
+        self.accounts.len() - 1
+    }
+
+    pub fn subscribe(&mut self, address: &str, amount_micro: u64, days: u64,
+                     now: i64, txid: &str) -> i64 {
+        let index = self.index_of(address);
+        let expires_at = now + (days as i64) * 86_400;
+        let account = &mut self.accounts[index];
+        account.paid_micro += amount_micro;
+        account.payments += 1;
+        account.expires_at = expires_at;
+        account.last_txid = txid.to_string();
+        expires_at
+    }
+
+    pub fn renew(&mut self, address: &str, amount_micro: u64, days: u64,
+                 now: i64, txid: &str) -> i64 {
+        let index = self.index_of(address);
+        let paid_until = self.accounts[index].expires_at;
+        let base = if paid_until > now { paid_until } else { now };
+        let expires_at = base + (days as i64) * 86_400;
+        let account = &mut self.accounts[index];
+        account.paid_micro += amount_micro;
+        account.payments += 1;
+        account.expires_at = expires_at;
+        account.last_txid = txid.to_string();
+        expires_at
+    }
+
+    pub fn cancel(&mut self, address: &str, now: i64) -> i64 {
+        let index = self.index_of(address);
+        self.accounts[index].expires_at = now;
+        now
+    }
+
+    pub fn active(&mut self, address: &str, now: i64) -> u64 {
+        let index = self.index_of(address);
+        if self.accounts[index].active(now) { 1 } else { 0 }
+    }
+
+    pub fn expired(&mut self, address: &str, now: i64) -> u64 {
+        let index = self.index_of(address);
+        if self.accounts[index].active(now) { 0 } else { 1 }
+    }
+
+    pub fn price(&self, tor_usd_micro: u64) -> u64 {
+        self.plan.price_micro(tor_usd_micro)
+    }
+}
+
+/// The single entry point a node calls: `amount_micro` is the settled TOR
+/// amount (or the TOR/USD rate in micro-USD for "price"), `now` is unix time.
+pub fn call(state: &mut Membership, function: &str, address: &str,
+            amount_micro: u64, days: u64, now: i64, txid: &str) -> i64 {
+    match function {
+        "subscribe" => state.subscribe(address, amount_micro, days, now, txid),
+        "renew" => state.renew(address, amount_micro, days, now, txid),
+        "cancel" => state.cancel(address, now),
+        "active" => state.active(address, now) as i64,
+        "expired" => state.expired(address, now) as i64,
+        "price" => state.price(amount_micro) as i64,
+        _ => state.expired(address, now) as i64,
+    }
+}
+"""},
 }
 
 ALLOWED_STATE = {"deposit", "release", "refund", "status", "open", "close",
-                 "check", "subscribe", "renew", "expired", "run"}
+                 "check", "subscribe", "renew", "expired", "run",
+                 "cancel", "active", "price"}
 
 #: What a non-owner may see. Source, live state, compiler output, fees and the
 #: binary path stay with the program's owner (or an admin credential).
@@ -309,8 +466,14 @@ def require_owner(contract_id: str, *, viewer_address: str | None = None,
 
 
 def deploy(*, name: str, template: str | None = None, source: str | None = None,
-           owner_wallet: str = "founder", wallet: str = "founder") -> dict:
-    """Compile → charge 5 TOR on-chain → store the contract."""
+           owner_wallet: str = "founder", wallet: str = "founder",
+           state: dict | None = None) -> dict:
+    """Compile → charge 5 TOR on-chain → store the contract.
+
+    ``state`` seeds the program's key/value state at deployment (the membership
+    template stores its plan, price and treasury there, so the deployed program
+    is self-describing before its first payment).
+    """
     chosen = str(template or "").strip().lower()
     if chosen and chosen not in TEMPLATES:
         raise ValidationError(f"unknown template {chosen!r}",
@@ -337,7 +500,8 @@ def deploy(*, name: str, template: str | None = None, source: str | None = None,
         "status": "deployed", "compile": compiled,
         "functions": TEMPLATES.get(chosen, {}).get(
             "functions", ["deposit", "release", "status"]),
-        "state": {"calls": 0},
+        "state": {"calls": 0, **{str(key): value for key, value
+                                 in (state or {}).items()}},
         "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "created_unix": int(time.time()), "txid": charge.get("txid"),
         "charge": {"code": charge["code"], "amount_micro": charge["amount_micro"],
@@ -381,11 +545,39 @@ def call(contract_id: str, function: str, args: dict | None = None, *,
                               details={"functions": contract.get("functions")})
     args = args if isinstance(args, dict) else {}
     state = dict(contract.get("state") or {})
-    now = int(time.time())
+    # ``args["now"]`` is a replay/testing seam for a deterministic re-execution;
+    # without it the node's own clock stamps the call.
+    now = int(args.get("now") or time.time())
     amount_micro = int(args.get("amount_micro") or 0)
     if not amount_micro and args.get("amount_tor"):
         amount_micro = int(round(float(args["amount_tor"]) * 10 ** 8))
     holding = int(args.get("holding") or args.get("balance") or 0)
+    # The ``membership`` template keeps one account per wallet; every other
+    # function ignores ``address`` entirely and behaves exactly as it did before
+    # (no address in the args = the plain escrow / token_gate / subscription call).
+    address = str(args.get("address") or "").strip()
+    accounts = dict(state.get("accounts") or {})
+    txid = str(args.get("txid") or "")
+
+    def _account() -> dict:
+        return dict(accounts.get(address) or {
+            "address": address,
+            "plan": str(state.get("plan") or contract.get("name") or ""),
+            "paid_micro": 0, "payments": 0, "expires_at": 0, "last_txid": ""})
+
+    def _record_payment(row: dict, expires: int) -> dict:
+        """Book one settled payment on the account: amount, receipt, expiry."""
+        row["paid_micro"] = int(row.get("paid_micro") or 0) + amount_micro
+        row["payments"] = int(row.get("payments") or 0) + 1
+        row["expires_at"] = int(expires)
+        row["paid_at"] = now
+        row["last_txid"] = txid
+        accounts[address] = row
+        state["accounts"] = accounts
+        state["accounts_count"] = len(accounts)
+        state["collected_micro"] = int(state.get("collected_micro") or 0) + amount_micro
+        return row
+
     result: object
     if requested == "deposit":
         if amount_micro <= 0:
@@ -410,12 +602,48 @@ def call(contract_id: str, function: str, args: dict | None = None, *,
     elif requested == "subscribe":
         days = int(state.get("days") or args.get("days") or 30)
         state["days"] = days
-        state["expires_at"] = now + days * 86_400
-        result = state["expires_at"]
+        expires = now + days * 86_400
+        if address:
+            expires = int(_record_payment(_account(), expires)["expires_at"])
+        state["expires_at"] = expires
+        result = expires
     elif requested == "renew":
         days = int(state.get("days") or args.get("days") or 30)
-        state["expires_at"] = max(int(state.get("expires_at") or 0), now) + days * 86_400
-        result = state["expires_at"]
+        state["days"] = days
+        expires = max(int(state.get("expires_at") or 0), now) + days * 86_400
+        if address:
+            base = max(int(_account().get("expires_at") or 0), now)
+            expires = int(_record_payment(_account(),
+                                          base + days * 86_400)["expires_at"])
+        state["expires_at"] = expires
+        result = expires
+    elif requested == "cancel":
+        if not address:
+            raise ValidationError("cancel needs the account address",
+                                  details={"field": "address"})
+        row = _account()
+        row["expires_at"] = now
+        row["cancelled_at"] = now
+        accounts[address] = row
+        state["accounts"] = accounts
+        state["expires_at"] = now
+        result = now
+    elif requested == "active":
+        if not address:
+            raise ValidationError("active needs the account address",
+                                  details={"field": "address"})
+        row = accounts.get(address) or _account()
+        result = bool(int(row.get("expires_at") or 0) > now)
+    elif requested == "price":
+        tor_usd_micro = int(args.get("tor_usd_micro") or 0)
+        if tor_usd_micro <= 0:
+            raise ValidationError(
+                "price needs tor_usd_micro — the TOR/USD rate in micro-USD "
+                "(3600000 for $3.60)",
+                details={"field": "tor_usd_micro"})
+        cents = int(state.get("price_usd_cents")
+                    or args.get("price_usd_cents") or 0)
+        result = (cents * 10_000 * 100_000_000) // tor_usd_micro if cents else 0
     elif requested == "run":
         if str(contract.get("kind")) != "rust_program":
             raise ValidationError("only a deployed Rust program can be run")
@@ -433,7 +661,10 @@ def call(contract_id: str, function: str, args: dict | None = None, *,
                   "ok": executed.get("ok"), "stdout": state["last_run"]["stdout"],
                   "stderr": state["last_run"]["stderr"]}
     else:  # expired
-        result = now > int(state.get("expires_at") or 0)
+        base = int(state.get("expires_at") or 0)
+        if address and address in accounts:
+            base = int(accounts[address].get("expires_at") or 0)
+        result = now > base
     state["calls"] = int(state.get("calls") or 0) + 1
     state["last_call"] = {"function": requested, "at": now,
                           "by": str(actor_address or ("admin" if admin else "")),
