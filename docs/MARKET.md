@@ -9,7 +9,7 @@ right now, and where did that number come from?** It lives in
 
 | Number | Rule | Source |
 | --- | --- | --- |
-| TOR price | one tick every 30 s: a random step of $0.10–$0.50, the direction biased by activity, clamped to $3.00–$100.00 | `oneness_tor/services/tor_price.py` (`data/market/tor-price.json`) |
+| TOR price | one tick every 30 s: a random step of $0.005–$0.05 (five cents is the ceiling), the direction biased by activity, inside a $0.50 envelope around the anchor, clamped to $3.00–$100.00 | `oneness_tor/services/tor_price.py` (`data/market/tor-price.json`) |
 | TOR anchor | where a cold node starts ($3.60) | `pricing.tor_usd` in `config.yaml` |
 | Activity | 60 % 24 h TOR volume + 40 % swap count, scored 0–1 | `/api/public/records` |
 | Engine publish | `POST /api/market/tor/price` — the Marketcap & Price Engine's quote wins while it is fresh (60 s) | `oneness_tor/api/market.py` |
@@ -21,8 +21,15 @@ right now, and where did that number come from?** It lives in
 
 The old turnover drift (`0.35 × volume ÷ liquidity`, ±15 %) is still reported as
 `drift` for older clients, but it no longer sets the price. The 30 s walk is the
-volatility rule: step **$0.10–$0.50**, floor **$3.00**, cap **$100.00**, and the
-published engine quote is authoritative until the next tick.
+volatility rule: step **$0.005–$0.05** (never more than five cents a tick), a
+**$0.50 envelope** around the anchor (±$0.25, `market.price_band_usd`), an
+absolute floor of **$3.00** and cap of **$100.00**, and the published engine
+quote is authoritative until the next tick.
+
+The 2026-11-25 revision replaced the earlier $0.10–$0.50 step: that walk could
+move TOR a dollar a minute, which every platform showed as a different number
+because each one sampled a different tick. Half a dollar of total travel, five
+cents a tick, one quote endpoint — that is the whole rule now.
 
 Nothing is imported from an oracle. When both a TOR pool and a USDC book exist,
 the deeper one sets the price and the other is listed beside it

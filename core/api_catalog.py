@@ -1086,9 +1086,11 @@ MARKET: list[dict] = [
       returns="{symbol, candles: [{time, open, high, low, close}], summary, source}"),
     E("market.tor", "GET", "/api/market/tor",
       "TOR alone: the live 30 s USD quote — the tick (step, direction, bias), the "
-      "$3-$100 band, the activity it tracks, the resulting market cap and the last "
+      "hard $3-$100 band and the $0.50 envelope around the anchor, the activity it "
+      "tracks, the resulting market cap and the last "
       "180 samples. Every platform reads this one number.",
-      returns="{symbol, price_usd, anchor_usd, floor_usd, cap_usd, update_seconds, "
+      returns="{symbol, price_usd, anchor_usd, band_usd, band_low_usd, band_high_usd, "
+              "step_min_usd, step_max_usd, floor_usd, cap_usd, update_seconds, "
               "updated_at, next_update_at, source, volatility: {tick, step_usd, direction, "
               "bias, target_usd, clamped, rule, engine_fresh}, activity: {score, "
               "volume_24h_tor, swaps_24h, liquidity_tor}, price_history, market_cap_usd, drift}"),

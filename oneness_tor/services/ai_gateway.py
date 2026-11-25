@@ -46,8 +46,9 @@ DEFAULT_SYSTEM = (
     "privacy-first chain reachable at "
     "http://4thdw6cvoacqtxpyvxziebiif5qmiwginb7wwgktsalmevrabqubpxid.onion and "
     "www.onenesstorblockchain.com. TOR is quoted live in USD every 30 seconds: one "
-    "random $0.10-$0.50 step, guided by real activity, inside a $3.00-$100.00 band "
-    "(the $3.60 launch anchor only seeds a cold node), and every token price "
+    "random $0.005-$0.05 step (never more than five cents), guided by real activity, "
+    "inside a $0.50 envelope around a $3.60 launch anchor and a hard $3.00-$100.00 "
+    "guard, and every token price "
     "comes from a real AMM pool on the chain. Be concise, technical and honest: "
     "never invent a price, a balance or an endpoint — say what the node reports."
 )

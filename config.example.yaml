@@ -193,11 +193,13 @@ sync:
 
 market:
   # TOR/USD volatility (oneness_tor.services.tor_price): one tick every 30 s,
-  # a random $0.10-$0.50 step, direction biased by the 24 h swaps + TOR volume
-  # the ledger reports, and an absolute $3.00-$100.00 band.
+  # a random $0.005-$0.05 step (never more than 5 cents), direction biased by
+  # the 24 h swaps + TOR volume the ledger reports, a $0.50 envelope around the
+  # anchor, and an absolute $3.00-$100.00 guard outside it.
   price_tick_seconds: 30
-  price_step_min_usd: 0.10
-  price_step_max_usd: 0.50
+  price_step_min_usd: 0.005
+  price_step_max_usd: 0.05
+  price_band_usd: 0.50
   price_floor_usd: 3
   price_cap_usd: 100
   # what "busy" means: 24 h TOR volume and swap count that earn a full score

@@ -3,9 +3,10 @@
 Every number here is derived from chain state, never typed in:
 
 * **TOR's USD price** is the 30-second volatility feed in
-  ``oneness_tor.services.tor_price``: one random step of $0.10-$0.50 per tick,
-  direction biased by the 24 h swaps and TOR volume the ledger reports, clamped
-  to a $3.00 floor and a $100.00 cap. The quote (and the tick it belongs to) is
+  ``oneness_tor.services.tor_price``: one random step of $0.005-$0.05 per tick
+  (never more than five cents), direction biased by the 24 h swaps and TOR volume
+  the ledger reports, inside a $0.50 envelope around the anchor and clamped to a
+  $3.00 floor and a $100.00 cap. The quote (and the tick it belongs to) is
   reported next to the price, and the Marketcap & Price Engine can publish the
   authoritative number through ``POST /api/market/tor/price``. The old
   turnover drift is still published as ``drift`` for older clients, but it no

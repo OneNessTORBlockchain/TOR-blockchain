@@ -88,6 +88,7 @@ _ENV_MAP = {
     "ONENESS_PRICE_TICK_SECONDS": "market.price_tick_seconds",
     "ONENESS_PRICE_STEP_MIN_USD": "market.price_step_min_usd",
     "ONENESS_PRICE_STEP_MAX_USD": "market.price_step_max_usd",
+    "ONENESS_PRICE_BAND_USD": "market.price_band_usd",
     "ONENESS_PRICE_FLOOR_USD": "market.price_floor_usd",
     "ONENESS_PRICE_CAP_USD": "market.price_cap_usd",
     "ONENESS_PRICE_ENGINE_TOKEN": "market.engine_token",
@@ -156,11 +157,13 @@ _DEFAULTS: dict[str, Any] = {
     "market.history_points": 2000,
     "market.chart_points": 168,
     # TOR/USD volatility (oneness_tor.services.tor_price): one tick every 30 s,
-    # a random $0.10-$0.50 step, direction biased by 24 h swaps + TOR volume,
-    # and an absolute band of $3.00 .. $100.00 that no tick may leave.
+    # a random $0.005-$0.05 step (five cents is the ceiling), direction biased
+    # by 24 h swaps + TOR volume, a $0.50 envelope around the anchor that no
+    # tick may leave, and an absolute $3.00 .. $100.00 guard outside it.
     "market.price_tick_seconds": 30.0,
-    "market.price_step_min_usd": 0.10,
-    "market.price_step_max_usd": 0.50,
+    "market.price_step_min_usd": 0.005,
+    "market.price_step_max_usd": 0.05,
+    "market.price_band_usd": 0.50,
     "market.price_floor_usd": 3.00,
     "market.price_cap_usd": 100.00,
     "market.price_history_points": 2880,

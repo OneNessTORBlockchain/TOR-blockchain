@@ -1,17 +1,26 @@
 """TOR's USD price — one 30-second volatility feed for every platform.
 
-The Capitain's order (2026-11-15) replaces the old "anchor x turnover drift"
-quote with a live, volatile one, and keeps it honest:
+The Capitain's first order (2026-11-15) made the quote live; the second one
+(2026-11-25) made it calm — *"0.5 USD of volatility, never past 5 cents a
+tick"*. Same shape as before, only the numbers moved:
 
 * **one tick every 30 s** — ``market.price_tick_seconds``;
-* **the price moves by a random step of $0.10 to $0.50** — that is the whole
-  volatility budget, and it is never exceeded (``market.price_step_min_usd`` /
-  ``market.price_step_max_usd``);
+* **the price moves by a random step of $0.005 to $0.05** — five cents is the
+  hard ceiling, per tick, in either direction (``market.price_step_min_usd`` /
+  ``market.price_step_max_usd``). The old walk allowed $0.10-$0.50, i.e. up to
+  a dollar a minute: that is the volatility this revision removes;
+* **the whole walk lives inside a $0.50 envelope** — the quote never sits more
+  than $0.25 away from its anchor (``market.price_band_usd``), so even a full
+  day of ticks can move TOR by half a dollar at most. The anchor is the
+  published start of the walk (``pricing.tor_usd``, $3.60 by default) and the
+  state file remembers it;
 * **the direction follows real activity** — the 24 h swap count and TOR volume
-  the ledger reports push the price up, a quiet chain pulls it down;
-* **the quote is clamped to $3.00 - $100.00** — the floor and the cap are
-  absolute (``market.price_floor_usd`` / ``market.price_cap_usd``), so no tick,
-  no publish and no restart can leave the band;
+  the ledger reports push the price up, a quiet chain pulls it down, and the
+  activity target itself is kept inside the envelope, so the walk breathes
+  instead of pinning itself against a wall;
+* **the quote is clamped to $3.00 - $100.00** as an absolute outer guard
+  (``market.price_floor_usd`` / ``market.price_cap_usd``) — no restart, no
+  publish and no state file can leave it;
 * **the Marketcap & Price Engine is the authority** — when it publishes a quote
   (``POST /api/market/tor/price``) this node serves that number to every
   platform until the next tick, and only walks the price itself when the engine
@@ -19,7 +28,10 @@ quote with a live, volatile one, and keeps it honest:
 
 The state lives in ``data/market/tor-price.json``, so a restart resumes the same
 price instead of jumping back to the anchor. The last 2 880 samples (24 h at
-30 s) are kept for the chart.
+30 s) are kept for the chart. A state file written by the old, wider walk can
+hold a price outside the new envelope: it is re-anchored on that price (once)
+rather than teleported into the band, because a 30 % jump on every chart is a
+lie about what happened.
 """
 from __future__ import annotations
 
@@ -33,21 +45,27 @@ from core.config import settings
 from core.errors import ValidationError
 from oneness_tor.services.store import data_dir, read_json, write_json
 
-STANDARD = "oneness-tor-price-walk/1"
+STANDARD = "oneness-tor-price-walk/2"
 LOCK = threading.RLock()
 _RNG = random.SystemRandom()
 
-STEP_MIN_USD = 0.10
-STEP_MAX_USD = 0.50
+STEP_MIN_USD = 0.005
+STEP_MAX_USD = 0.05
+BAND_USD = 0.50
 FLOOR_USD = 3.00
 CAP_USD = 100.00
 TICK_SECONDS = 30.0
 HISTORY_POINTS = 2880
 MAX_CATCH_UP_TICKS = 240
+#: how much of the half-envelope the activity target may travel: the target sits
+#: at most $0.20 from the anchor inside a $0.25 half-band, so the price always
+#: has room to move and never pins itself on a wall.
+TARGET_TRAVEL = 0.8
 
-RULE = ("one tick every 30 s; step = random $0.10-$0.50 per tick, direction biased by "
-        "24 h swaps + TOR volume; clamp $3.00-$100.00; the price engine's published "
-        "quote wins while it is fresh")
+RULE = ("one tick every 30 s; step = random $0.005-$0.05 per tick (never more than 5 cents), "
+        "direction biased by 24 h swaps + TOR volume; the walk never leaves a $0.50 envelope "
+        "around its anchor (+/- $0.25) and is clamped to $3.00-$100.00; the price engine's "
+        "published quote wins while it is fresh")
 
 
 def _number(value: object, fallback: float = 0.0) -> float:
@@ -67,19 +85,21 @@ def tick_seconds() -> float:
 
 
 def step_min_usd() -> float:
-    return max(0.01, _setting("market.price_step_min_usd", STEP_MIN_USD))
+    return max(0.001, _setting("market.price_step_min_usd", STEP_MIN_USD))
 
 
 def step_max_usd() -> float:
     return max(step_min_usd(), _setting("market.price_step_max_usd", STEP_MAX_USD))
 
 
-def floor_usd() -> float:
-    return max(0.01, _setting("market.price_floor_usd", FLOOR_USD))
+def band_usd() -> float:
+    """The total width of the volatility envelope (default $0.50)."""
+    return max(max(0.02, 2 * step_max_usd()), _setting("market.price_band_usd", BAND_USD))
 
 
-def cap_usd() -> float:
-    return max(floor_usd(), _setting("market.price_cap_usd", CAP_USD))
+def band_half_usd() -> float:
+    return band_usd() / 2.0
+
 
 
 def activity_volume_tor() -> float:
@@ -103,8 +123,28 @@ def _iso(stamp: float | None = None) -> str:
                                   timezone.utc).isoformat(timespec="seconds")
 
 
-def clamp(price: float) -> float:
-    return round(max(floor_usd(), min(cap_usd(), _number(price))), 8)
+def anchor_default() -> float:
+    return _number(settings.get("pricing.tor_usd"), 3.60) or 3.60
+
+
+def band_low(anchor: float) -> float:
+    """The bottom of the envelope for ``anchor`` — never under the hard floor."""
+    return round(max(floor_usd(), _number(anchor, anchor_default()) - band_half_usd()), 8)
+
+
+def band_high(anchor: float) -> float:
+    """The top of the envelope for ``anchor`` — never over the hard cap."""
+    return round(min(cap_usd(), _number(anchor, anchor_default()) + band_half_usd()), 8)
+
+
+def clamp(price: float, anchor: float | None = None) -> float:
+    """Clamp to $3-$100, and — when an anchor is given — to the $0.50 envelope."""
+    value = max(floor_usd(), min(cap_usd(), _number(price)))
+    if anchor is not None:
+        base = _number(anchor, anchor_default()) or anchor_default()
+        if base > 0:
+            value = max(band_low(base), min(band_high(base), value))
+    return round(value, 8)
 
 
 def activity_score(*, volume_tor: float = 0.0, swaps: float = 0.0) -> dict:
@@ -118,10 +158,18 @@ def activity_score(*, volume_tor: float = 0.0, swaps: float = 0.0) -> dict:
             "swaps_target": int(activity_swaps())}
 
 
-def activity_target(score: float) -> float:
-    """The price the current activity deserves, inside the $3 - $100 band."""
-    span = cap_usd() - floor_usd()
-    return round(floor_usd() + min(1.0, max(0.0, _number(score))) * span, 8)
+def activity_target(score: float, anchor: float | None = None) -> float:
+    """The price the current activity deserves, inside the $0.50 envelope.
+
+    A quiet chain (score 0) targets $0.20 under the anchor, a busy one (score 1)
+    $0.20 over it, and a half-busy one aims at the anchor itself. The target is
+    always inside the band, which is what keeps the walk moving instead of
+    pressing against a wall.
+    """
+    base = _number(anchor, anchor_default()) or anchor_default()
+    clean = min(1.0, max(0.0, _number(score)))
+    travel = band_half_usd() * TARGET_TRAVEL
+    return round(clamp(base + (clean - 0.5) * 2.0 * travel, base), 8)
 
 
 def upward_bias(price: float, target: float) -> float:
@@ -132,31 +180,47 @@ def upward_bias(price: float, target: float) -> float:
     return round(max(0.05, min(0.95, 0.5 + 0.5 * (target - price) / span)), 6)
 
 
-def next_price(price: float, target: float, *, rng: random.Random | None = None) -> dict:
-    """One tick: a random $0.10-$0.50 step, biased by activity, clamped."""
+def next_price(price: float, target: float, *, rng: random.Random | None = None,
+               anchor: float | None = None) -> dict:
+    """One tick: a random $0.005-$0.05 step, biased by activity, clamped to the band."""
     source = rng or _RNG
+    base = _number(anchor, anchor_default()) or anchor_default()
     low, high = step_min_usd(), step_max_usd()
     step = source.uniform(low, high)
     bias = upward_bias(price, target)
     up = source.random() < bias
-    before = clamp(price)
-    after = clamp(before + step if up else before - step)
+    before = clamp(price, base)
+    after = clamp(before + step if up else before - step, base)
+    edges = (floor_usd(), cap_usd(), band_low(base), band_high(base))
     return {
         "price_usd": after,
         "step_usd": round(abs(after - before), 8),
         "direction": "up" if after >= before else "down",
         "bias": bias,
         "target_usd": round(target, 8),
-        "clamped": after in (floor_usd(), cap_usd()),
+        "anchor_usd": round(base, 8),
+        "clamped": any(abs(after - edge) < 1e-9 for edge in edges),
     }
 
 
+def floor_usd() -> float:
+    return max(0.01, _setting("market.price_floor_usd", FLOOR_USD))
+
+
+def cap_usd() -> float:
+    return max(floor_usd(), _setting("market.price_cap_usd", CAP_USD))
+
+
+
 def _blank(anchor: float, now: float) -> dict:
-    return {"standard": STANDARD, "price_usd": clamp(anchor), "anchor_usd": anchor,
-            "source": "node-volatility", "updated_ts": now, "updated_at": _iso(now),
+    base = round(_number(anchor, anchor_default()) or anchor_default(), 8)
+    price = clamp(base, base)
+    return {"standard": STANDARD, "price_usd": price, "anchor_usd": base,
+            "band_usd": band_usd(), "source": "node-volatility",
+            "updated_ts": now, "updated_at": _iso(now),
             "tick": 0, "step_usd": 0.0, "direction": "flat", "bias": 0.5,
-            "target_usd": clamp(anchor), "clamped": False,
-            "activity": activity_score(), "history": [[int(now), clamp(anchor)]],
+            "target_usd": price, "clamped": False,
+            "activity": activity_score(), "history": [[int(now), price]],
             "published_by": None}
 
 
@@ -164,7 +228,17 @@ def _load(anchor: float, now: float | None = None) -> dict:
     document = read_json(state_path(), {}) or {}
     if not isinstance(document, dict) or not document.get("price_usd"):
         return _blank(anchor, now if now is not None else time.time())
-    document["price_usd"] = clamp(document.get("price_usd"))
+    base = _number(document.get("anchor_usd"), anchor) or anchor
+    price = _number(document.get("price_usd"), base)
+    # A file written by the old $0.10-$0.50 walk can hold a price well outside
+    # the $0.50 envelope. Re-anchor on that price instead of snapping it into
+    # the band: the walk continues from where the market actually is.
+    if price < band_low(base) - 1e-9 or price > band_high(base) + 1e-9:
+        base = round(price, 8)
+    document["anchor_usd"] = base
+    document["price_usd"] = clamp(price, base)
+    document["band_usd"] = band_usd()
+    document["standard"] = STANDARD
     history = document.get("history")
     if not isinstance(history, list):
         history = []
@@ -177,18 +251,16 @@ def _save(document: dict) -> None:
     write_json(state_path(), document)
 
 
-def anchor_default() -> float:
-    return _number(settings.get("pricing.tor_usd"), 3.60) or 3.60
-
-
-def _advance(document: dict, now: float, target: float) -> dict:
+def _advance(document: dict, now: float, score: float) -> dict:
     """Walk the price forward to ``now``, one 30 s tick at a time (bounded)."""
     tick = tick_seconds()
     elapsed = max(0.0, now - _number(document.get("updated_ts"), now))
     due = min(MAX_CATCH_UP_TICKS, int((elapsed + 1.0) // tick))
-    price = clamp(document.get("price_usd"))
+    base = _number(document.get("anchor_usd"), anchor_default()) or anchor_default()
+    target = activity_target(score, base)
+    price = clamp(document.get("price_usd"), base)
     for index in range(due):
-        move = next_price(price, target)
+        move = next_price(price, target, anchor=base)
         price = move["price_usd"]
         document.update({key: move[key] for key in
                          ("step_usd", "direction", "bias", "target_usd", "clamped")})
@@ -196,13 +268,16 @@ def _advance(document: dict, now: float, target: float) -> dict:
         stamp = int(now - (due - index - 1) * tick)
         document.setdefault("history", []).append([stamp, price])
     document["price_usd"] = price
+    document["target_usd"] = target
     history = document.get("history") or []
     if len(history) > _history_points():
         document["history"] = history[-_history_points():]
     document["source"] = "node-volatility"
     document["updated_ts"] = now
     document["updated_at"] = _iso(now)
-    document["anchor_usd"] = _number(document.get("anchor_usd")) or anchor_default()
+    document["anchor_usd"] = base
+    document["band_usd"] = band_usd()
+    document["standard"] = STANDARD
     return document
 
 
@@ -211,14 +286,18 @@ def view(document: dict, *, now: float | None = None) -> dict:
     stamp = now if now is not None else time.time()
     tick = tick_seconds()
     updated = _number(document.get("updated_ts"), stamp)
+    base = _number(document.get("anchor_usd"), anchor_default()) or anchor_default()
     history = [point for point in (document.get("history") or [])
                if isinstance(point, list) and len(point) == 2]
     return {
         "standard": STANDARD,
         "symbol": "TOR", "name": "OneNess TOR", "quote": "USD",
-        "price_usd": clamp(document.get("price_usd")),
+        "price_usd": clamp(document.get("price_usd"), base),
         "price_tor": 1.0,
-        "anchor_usd": round(_number(document.get("anchor_usd")) or anchor_default(), 8),
+        "anchor_usd": round(base, 8),
+        "band_usd": band_usd(),
+        "band_low_usd": band_low(base), "band_high_usd": band_high(base),
+        "step_min_usd": step_min_usd(), "step_max_usd": step_max_usd(),
         "floor_usd": floor_usd(), "cap_usd": cap_usd(),
         "update_seconds": tick,
         "updated_at": document.get("updated_at") or _iso(updated),
@@ -233,7 +312,7 @@ def view(document: dict, *, now: float | None = None) -> dict:
         "target_usd": round(_number(document.get("target_usd")), 8),
         "clamped": bool(document.get("clamped")),
         "activity": document.get("activity") or activity_score(),
-        "history": [[int(point[0]), clamp(point[1])] for point in history[-180:]],
+        "history": [[int(point[0]), clamp(point[1], base)] for point in history[-180:]],
         "history_points": len(history),
         "rule": RULE,
         "engine_fresh": document.get("source") == "engine",
@@ -249,18 +328,21 @@ def quote(*, volume_tor: float = 0.0, swaps: float = 0.0,
     tick = tick_seconds()
     activity = activity_score(volume_tor=volume_tor, swaps=swaps)
     activity["liquidity_tor"] = round(_number(liquidity_tor), 8)
-    target = activity_target(activity["score"])
     with LOCK:
         document = _load(anchor_usd or anchor_default(), stamp)
+        base = _number(document.get("anchor_usd"), anchor_default()) or anchor_default()
+        target = activity_target(activity["score"], base)
         fresh_engine = (document.get("source") == "engine"
                         and stamp - _number(document.get("updated_ts")) < tick * 2)
         if not fresh_engine and stamp - _number(document.get("updated_ts")) >= tick:
-            document = _advance(document, stamp, target)
-        elif not fresh_engine:
+            document = _advance(document, stamp, activity["score"])
+        else:
             document["target_usd"] = target
         document["activity"] = activity
         _save(document)
         return view(document, now=stamp)
+
+    return document
 
 
 def publish(price_usd: object, *, activity: dict | None = None, actor: str = "",
@@ -277,11 +359,18 @@ def publish(price_usd: object, *, activity: dict | None = None, actor: str = "",
     stamp = now if now is not None else time.time()
     with LOCK:
         document = _load(anchor_default(), stamp)
-        before = clamp(document.get("price_usd"))
-        after = clamp(price)
+        base = _number(document.get("anchor_usd"), anchor_default()) or anchor_default()
+        before = clamp(document.get("price_usd"), base)
+        after = clamp(price)                      # the hard $3-$100 guard only
+        if after < band_low(base) - 1e-9 or after > band_high(base) + 1e-9:
+            # The engine is the authority: a quote outside this node's envelope
+            # moves the envelope with it instead of being silently rewritten.
+            base = after
+        after = clamp(after, base)
         document.update({
             "standard": STANDARD, "price_usd": after, "source": source,
             "published_by": str(actor or "")[:80] or None,
+            "anchor_usd": base, "band_usd": band_usd(),
             "step_usd": round(abs(after - before), 8),
             "direction": "up" if after >= before else "down",
             "clamped": False, "updated_ts": stamp, "updated_at": _iso(stamp),
@@ -310,4 +399,7 @@ def status() -> dict:
     return {"standard": STANDARD, "price_usd": block["price_usd"],
             "updated_at": block["updated_at"], "source": block["source"],
             "update_seconds": block["update_seconds"], "rule": RULE,
+            "anchor_usd": block["anchor_usd"], "band_usd": block["band_usd"],
+            "band_low_usd": block["band_low_usd"], "band_high_usd": block["band_high_usd"],
             "floor_usd": block["floor_usd"], "cap_usd": block["cap_usd"]}
+

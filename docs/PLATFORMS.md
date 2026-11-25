@@ -59,8 +59,8 @@ every listing, and the two-snippet integration guide (`GET /api/market/chart/…
 → `<CandleChart/>`). The component is pure SVG and is copied into the screener,
 DarkWeb and swap by the kit.
 
-**6 · SOLARIX ENGINE** — TOR's live 30 s USD quote (one $0.10–$0.50 step, $3–$100
-band, activity-guided), chain height, pools, liquidity, volume, movers, newest
+**6 · SOLARIX ENGINE** — TOR's live 30 s USD quote (one $0.005–$0.05 step, a
+$0.50 envelope, $3–$100 guard, activity-guided), chain height, pools, liquidity, volume, movers, newest
 listings and the platforms reading the engine, plus the full token table and the
 model documentation.
 
